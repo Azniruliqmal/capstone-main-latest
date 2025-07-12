@@ -1,0 +1,31 @@
+FADE IN:
+
+INT. COFFEE SHOP - DAY
+
+JOHN sits at a table, reading a newspaper. The morning sun streams through the window, casting long shadows across the wooden floor.
+
+JOHN
+(looking up from his paper)
+This is a test script for our integration test. It's designed to demonstrate the script analysis functionality.
+
+SARAH enters the coffee shop, looking around nervously.
+
+SARAH
+(approaching John's table)
+Excuse me, is this seat taken?
+
+JOHN
+(smiling warmly)
+Not at all. Please, sit down.
+
+SARAH sits down, placing her bag on the floor.
+
+SARAH
+Thank you. I'm Sarah.
+
+JOHN
+I'm John. Nice to meet you.
+
+FADE OUT.
+
+THE END

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScriptBreakdown Debug</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .debug-section {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #2a2a2a;
+            border-radius: 8px;
+        }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .warning { color: #fbbf24; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            background-color: #3b82f6;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background-color: #2563eb; }
+        pre {
+            background-color: #374151;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>ScriptBreakdown Debug Tool</h1>
+    
+    <div class="debug-section">
+        <h2>Frontend Status</h2>
+        <button onclick="checkFrontend()">Check Frontend</button>
+        <button onclick="checkScriptBreakdown()">Check ScriptBreakdown Page</button>
+        <div id="frontend-status"></div>
+    </div>
+
+    <div class="debug-section">
+        <h2>Backend Status</h2>
+        <button onclick="checkBackend()">Check Backend</button>
+        <button onclick="checkProjects()">Check Projects API</button>
+        <div id="backend-status"></div>
+    </div>
+
+    <div class="debug-section">
+        <h2>Demo Data Test</h2>
+        <button onclick="testDemoData()">Test Demo Data Structure</button>
+        <div id="demo-data-test"></div>
+    </div>
+
+    <div class="debug-section">
+        <h2>Console Logs</h2>
+        <button onclick="openConsole()">Open Browser Console</button>
+        <p>Check the browser console for detailed logs when visiting the ScriptBreakdown page.</p>
+    </div>
+
+    <script>
+        function log(containerId, message, type = 'info') {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            container.appendChild(div);
+        }
+
+        async function checkFrontend() {
+            try {
+                const response = await fetch('http://localhost:3000');
+                if (response.ok) {
+                    log('frontend-status', 'Frontend is running ✓', 'success');
+                } else {
+                    log('frontend-status', `Frontend error: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log('frontend-status', `Frontend connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkScriptBreakdown() {
+            try {
+                const response = await fetch('http://localhost:3000/script-breakdown');
+                if (response.ok) {
+                    log('frontend-status', 'ScriptBreakdown page accessible ✓', 'success');
+                    log('frontend-status', '<a href="http://localhost:3000/script-breakdown" target="_blank">Open ScriptBreakdown Page</a>', 'info');
+                } else {
+                    log('frontend-status', `ScriptBreakdown page error: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log('frontend-status', `ScriptBreakdown page failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkBackend() {
+            try {
+                const response = await fetch('http://localhost:8000');
+                if (response.ok) {
+                    log('backend-status', 'Backend is running ✓', 'success');
+                } else {
+                    log('backend-status', `Backend error: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log('backend-status', `Backend connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkProjects() {
+            try {
+                const response = await fetch('http://localhost:8000/projects');
+                if (response.ok) {
+                    const data = await response.json();
+                    log('backend-status', `Projects API working ✓ (${data.data?.length || 0} projects)`, 'success');
+                    
+                    if (data.data && data.data.length > 0) {
+                        const firstProject = data.data[0];
+                        log('backend-status', `First project: ${firstProject.title}`, 'info');
+                        
+                        // Check if project has script breakdown data
+                        if (firstProject.scriptBreakdown && firstProject.scriptBreakdown.scenes) {
+                            log('backend-status', `Project has ${firstProject.scriptBreakdown.scenes.length} scenes`, 'success');
+                        } else {
+                            log('backend-status', 'Project missing scriptBreakdown data', 'warning');
+                        }
+                    }
+                } else {
+                    log('backend-status', `Projects API error: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log('backend-status', `Projects API failed: ${error.message}`, 'error');
+            }
+        }
+
+        function testDemoData() {
+            const demoProject = {
+                id: 'demo-1',
+                title: 'The Last Guardian',
+                scriptBreakdown: {
+                    scenes: [
+                        {
+                            number: 1,
+                            heading: 'EXT. ANCIENT FOREST - DAY',
+                            location: 'Ancient Forest',
+                            time: 'DAY',
+                            characters: ['LYRA', 'GUARDIAN SPIRIT'],
+                            props: ['Ancient sword', 'Mystical crystal'],
+                            dialogues: [
+                                'LYRA: I can feel the ancient power calling to me.',
+                                'GUARDIAN SPIRIT: You have been chosen, young warrior.'
+                            ]
+                        },
+                        {
+                            number: 2,
+                            heading: 'INT. LYRA\'S COTTAGE - NIGHT',
+                            location: 'Cottage',
+                            time: 'NIGHT',
+                            characters: ['LYRA', 'ELDER WOMAN'],
+                            props: ['Fireplace', 'Old books'],
+                            dialogues: [
+                                'ELDER WOMAN: The spirits have spoken to you, haven\'t they?',
+                                'LYRA: How did you know?'
+                            ]
+                        }
+                    ]
+                }
+            };
+
+            log('demo-data-test', 'Demo data structure is valid ✓', 'success');
+            log('demo-data-test', `Demo project: ${demoProject.title}`, 'info');
+            log('demo-data-test', `Scenes: ${demoProject.scriptBreakdown.scenes.length}`, 'info');
+            
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(demoProject, null, 2);
+            document.getElementById('demo-data-test').appendChild(pre);
+        }
+
+        function openConsole() {
+            alert('Press F12 to open the browser console, then visit the ScriptBreakdown page to see debug logs.');
+        }
+
+        // Auto-run basic checks
+        window.onload = function() {
+            checkFrontend();
+            checkBackend();
+        };
+    </script>
+</body>
+</html>

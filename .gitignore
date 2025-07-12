@@ -1,0 +1,159 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/myvenv/
+backend/venv/
+backend/env/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+.ENV/
+.env/
+
+# LangGraph
+.langgraph_api
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# API Keys and Configuration
+config/secrets.json
+secrets/
+*.key
+.secrets
+api_keys.json
+
+# Node.js
+node_modules/
+*/node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+yarn.lock
+package-lock.json
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+frontend/dist/
+frontend/.vite/
+.next/
+out/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+script_analysis.db
+
+# Temporary files
+*.tmp
+*.temp
+backend/uploads/
+backend/temp/
+temp/
+uploads/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Additional Python
+instance/
+.webassets-cache
+.scrapy
+.sphinx/
+celerybeat-schedule
+celerybeat.pid
+
+# FastAPI specific
+.pytest_cache/
+htmlcov/
+
+# Vue.js specific
+.nuxt
+.vuepress/dist
+
+# Testing
+.coverage
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Local development
+local_settings.py
+.env.example
+test_*.py
+debug.log
+
+# Production files
+*.pid
+*.sock
