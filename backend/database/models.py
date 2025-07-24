@@ -1,83 +1,9 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, JSON, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, JSON, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import uuid
 
 Base = declarative_base()
-
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    username = Column(String(100), unique=True, nullable=False, index=True)
-    full_name = Column(String(255), nullable=True)
-    hashed_password = Column(String(255), nullable=False)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    
-    # Relationships
-    projects = relationship("Project", back_populates="owner")
-    
-    def to_dict(self):
-        """Convert model to dictionary for API responses"""
-        return {
-            "id": self.id,
-            "email": self.email,
-            "username": self.username,
-            "full_name": self.full_name,
-            "is_active": self.is_active,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
-        }
-
-class Project(Base):
-    __tablename__ = "projects"
-    
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = Column(String(255), nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    status = Column(String(50), default="active", index=True)  # active, completed, archived
-    user_id = Column(String, ForeignKey("users.id"), nullable=True)
-    budget_total = Column(Float, nullable=True)
-    estimated_duration_days = Column(Integer, nullable=True)
-    script_filename = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    
-    # Relationships
-    owner = relationship("User", back_populates="projects")
-    analyzed_scripts = relationship("AnalyzedScript", back_populates="project", cascade="all, delete-orphan")
-    
-    def to_dict(self):
-        """Convert model to dictionary for API responses"""
-        return {
-            "id": self.id,
-            "title": self.title,
-            "description": self.description,
-            "status": self.status,
-            "user_id": self.user_id,
-            "budget_total": self.budget_total,
-            "estimated_duration_days": self.estimated_duration_days,
-            "script_filename": self.script_filename,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "scripts_count": len(self.analyzed_scripts) if self.analyzed_scripts else 0
-        }
-    
-    def to_summary_dict(self):
-        """Convert to summary dictionary for list views"""
-        return {
-            "id": self.id,
-            "title": self.title,
-            "status": self.status,
-            "budget_total": self.budget_total,
-            "estimated_duration_days": self.estimated_duration_days,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "scripts_count": len(self.analyzed_scripts) if self.analyzed_scripts else 0
-        }
 
 class AnalyzedScript(Base):
     __tablename__ = "analyzed_scripts"
@@ -87,10 +13,6 @@ class AnalyzedScript(Base):
     filename = Column(String(255), nullable=False, index=True)  # Added index for searches
     original_filename = Column(String(255), nullable=False)
     file_size_bytes = Column(Integer, nullable=False)
-    
-    # Project relationship
-    project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True)
-    project = relationship("Project", back_populates="analyzed_scripts")
     
     # Analysis results (stored as JSON)
     script_data = Column(JSON, nullable=True)
@@ -135,7 +57,6 @@ class AnalyzedScript(Base):
             "filename": self.filename,
             "original_filename": self.original_filename,
             "file_size_bytes": self.file_size_bytes,
-            "project_id": self.project_id,
             "script_data": self.script_data,
             "cast_breakdown": self.cast_breakdown,
             "cost_breakdown": self.cost_breakdown,
@@ -170,3 +91,67 @@ class AnalyzedScript(Base):
     
     def __repr__(self):
         return f"<AnalyzedScript(id={self.id}, filename={self.filename}, status={self.status})>"
+
+
+class User(Base):
+    __tablename__ = "users"
+    
+    # Primary key and basic info
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    username = Column(String(100), nullable=False, unique=True, index=True)
+    full_name = Column(String(255), nullable=True)
+    
+    # OAuth fields
+    oauth_provider = Column(String(50), nullable=True)  # 'google', 'github', etc.
+    oauth_id = Column(String(255), nullable=True)
+    profile_picture_url = Column(String(500), nullable=True)
+    
+    # User status and verification
+    is_verified = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Timestamps
+    created_at = Column(
+        DateTime, 
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True
+    )
+    updated_at = Column(
+        DateTime, 
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    last_login_at = Column(DateTime, nullable=True)
+    
+    def to_dict(self):
+        """Convert model to dictionary for API responses"""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "username": self.username,
+            "full_name": self.full_name,
+            "oauth_provider": self.oauth_provider,
+            "profile_picture_url": self.profile_picture_url,
+            "is_verified": self.is_verified,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None
+        }
+    
+    def to_public_dict(self):
+        """Convert to public dictionary (no sensitive info)"""
+        return {
+            "id": self.id,
+            "username": self.username,
+            "full_name": self.full_name,
+            "profile_picture_url": self.profile_picture_url,
+            "is_verified": self.is_verified,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+    
+    def __repr__(self):
+        return f"<User(id={self.id}, username={self.username}, email={self.email})>"

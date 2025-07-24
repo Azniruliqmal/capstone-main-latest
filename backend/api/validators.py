@@ -196,20 +196,3 @@ class HumanFeedbackResponse(BaseModel):
     feedback_processed: bool = Field(description="Whether feedback was processed")
     action_taken: str = Field(description="Action taken based on feedback")
     status: str = Field(description="Updated script status")
-
-# Chat API models
-class ChatMessage(BaseModel):
-    id: str
-    type: str = Field(..., pattern="^(user|ai)$")
-    content: str
-    timestamp: str
-    actions: Optional[List[Dict[str, str]]] = None
-
-class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=2000)
-    history: Optional[List[ChatMessage]] = None
-
-class ChatResponse(BaseModel):
-    response: str
-    actions: Optional[List[Dict[str, str]]] = None
-    timestamp: str

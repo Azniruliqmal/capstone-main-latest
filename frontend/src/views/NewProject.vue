@@ -165,7 +165,7 @@ function simulateProgress() {
   }, 1500) // Each step takes 1.5 seconds
 }
 
-// Handle Generate button with API integration
+// Handle Generate button with Zarul's analyzeAndSave function
 async function onGenerate() {
   if (!selectedFile.value) {
     alert('Please select a file first.')
@@ -180,19 +180,11 @@ async function onGenerate() {
     // Start progress simulation
     simulateProgress()
 
-    // Get project details from filename
-    const projectTitle = selectedFile.value.name.replace(/\.[^/.]+$/, "")
-    const description = `Script analysis for ${projectTitle}`
+    // Use the store's analyzeAndSave function
+    const result = await projectStore.analyzeAndSave(selectedFile.value)
 
-    // Use store to create project with script
-    const result = await projectStore.createProjectWithScript(
-      projectTitle, 
-      description, 
-      selectedFile.value
-    )
-
-    // Check if the project was created successfully
-    if (result.success) {
+    // Check if the analysis was successful
+    if (result && result.success) {
       // Wait for progress simulation to complete
       await new Promise(resolve => {
         const checkProgress = () => {
@@ -210,10 +202,10 @@ async function onGenerate() {
       
       // Navigate back to projects after a short delay
       setTimeout(() => {
-        router.push({ name: 'ProjectsView' })
+        router.push({ name: 'ScriptBreakdown' })
       }, 1000)
     } else {
-      throw new Error(result.message || 'Project creation failed')
+      throw new Error(result?.message || 'Script analysis failed')
     }
 
   } catch (error: any) {

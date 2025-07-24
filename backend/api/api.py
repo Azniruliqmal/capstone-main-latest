@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, UploadFile, Depends, File, Query, Body, Form
+from fastapi import FastAPI, HTTPException, UploadFile, Depends, File, Query, Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import desc, text
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
@@ -12,13 +12,14 @@ import time
 import asyncio
 import logging
 import json
+from agents.agent.chatbot_agent import chatbot_agent
 
-from database.database import get_db, create_tables, init_database
-from database.services import AnalyzedScriptService, ProjectService, UserService
-from database.models import AnalyzedScript, Project, User
+from database.database import get_db, create_tables
+from database.services import AnalyzedScriptService
+from database.models import AnalyzedScript
 from main import run_optimized_script_analysis
-from api.serializers import ResultSerializer
-from api.validators import (
+from .serializers import ResultSerializer
+from .validators import (
     FileValidator, 
     AnalyzeScriptResponse, 
     DatabaseScriptResponse,
@@ -26,8 +27,6 @@ from api.validators import (
     AnalysisValidator,
     SaveAnalysisRequest,
     SaveAnalysisResponse,
-    ChatRequest,
-    ChatResponse
 )
 from .middleware import setup_middleware
 
@@ -41,18 +40,6 @@ app = FastAPI(
 )
 
 setup_middleware(app)
-
-# Database initialization on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database tables on application startup"""
-    try:
-        logger.info("Initializing database...")
-        init_database()
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {str(e)}")
-        # Don't raise here to allow app to start even if DB fails initially
 
 # Main route endpoint
 @app.get("/")
@@ -79,7 +66,7 @@ async def health_check(db: Session = Depends(get_db)):
     """Detailed health check with database connectivity"""
     try:
         # Test database connection
-        db.execute(text("SELECT 1"))
+        db.execute("SELECT 1")
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
@@ -91,114 +78,6 @@ async def health_check(db: Session = Depends(get_db)):
         "database": db_status,
         "version": "2.1.0"
     }
-
-# Chat endpoint for AI Assistant
-@app.post("/chat", response_model=ChatResponse)
-async def chat_with_ai(request: ChatRequest):
-    """
-    Chat endpoint for AI Assistant functionality with real AI responses
-    """
-    try:
-        from datetime import datetime
-        from agents.utils.gemini_model import get_model
-        from pydantic_ai import Agent
-        
-        # Build conversation history for context
-        conversation_context = ""
-        if request.history:
-            conversation_context = "\n".join([
-                f"{'User' if msg.type == 'user' else 'Assistant'}: {msg.content}" 
-                for msg in request.history[-5:]  # Last 5 messages for context
-            ])
-        
-        # System prompt for film-making assistant
-        system_prompt = """You are a helpful filmmaking AI assistant. Keep responses SHORT, FRIENDLY, and PRACTICAL.
-
-Key expertise:
-- Script analysis & breakdowns
-- Film budgeting & cost estimation  
-- Production planning & workflows
-- Equipment & crew recommendations
-- Creative storytelling advice
-
-Response guidelines:
-- Keep answers under 2-3 sentences when possible
-- Be conversational and encouraging
-- Give specific, actionable advice
-- Mention budget considerations when relevant
-
-For app features, mention:
-- Script upload & AI analysis
-- Budget estimation tools
-- Project management
-- Export reports
-
-Always be concise and helpful!"""
-
-        # Create AI agent with film-making expertise
-        model = get_model()
-        agent = Agent(model=model, system_prompt=system_prompt)
-        
-        # Prepare the user's message with context
-        user_prompt = f"""
-{f"Previous context: {conversation_context}" if conversation_context else ""}
-
-Question: {request.message}
-
-Please give a SHORT, helpful response (1-2 sentences preferred). Be friendly and practical.
-"""
-        
-        # Get AI response
-        result = await agent.run(user_prompt)
-        ai_response = result.data if hasattr(result, 'data') else str(result)
-        
-        # Determine appropriate actions based on the content
-        actions = []
-        user_message_lower = request.message.lower()
-        
-        if any(word in user_message_lower for word in ['budget', 'cost', 'money', 'expense', 'financing']):
-            actions = [
-                {"label": "View Budget Breakdown", "action": "navigate_budget"},
-                {"label": "Export Budget Report", "action": "export_budget"}
-            ]
-        elif any(word in user_message_lower for word in ['scene', 'script', 'breakdown', 'analysis', 'character']):
-            actions = [
-                {"label": "View Script Analysis", "action": "navigate_script"},
-                {"label": "Upload New Script", "action": "upload_script"}
-            ]
-        elif any(word in user_message_lower for word in ['project', 'create', 'new', 'manage']):
-            actions = [
-                {"label": "Create New Project", "action": "create_project"},
-                {"label": "View All Projects", "action": "view_projects"}
-            ]
-        elif any(word in user_message_lower for word in ['export', 'download', 'report', 'save']):
-            actions = [
-                {"label": "Export Scene Report", "action": "export_scenes"},
-                {"label": "Export Budget Report", "action": "export_budget"}
-            ]
-        
-        response_data = {
-            "response": ai_response,
-            "actions": actions,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        logger.info(f"AI chat response generated for message: {request.message[:50]}...")
-        return JSONResponse(status_code=200, content=response_data)
-        
-    except Exception as e:
-        logger.error(f"Chat endpoint error: {str(e)}")
-        # Fallback to a helpful error message
-        fallback_response = {
-            "response": "I'm having trouble connecting to the AI service right now. However, I can still help you navigate this application! You can upload scripts for analysis, view budget breakdowns, manage projects, and export reports. What would you like to do?",
-            "actions": [
-                {"label": "Upload Script", "action": "upload_script"},
-                {"label": "View Projects", "action": "view_projects"},
-                {"label": "Help & Guide", "action": "show_guide"}
-            ],
-            "timestamp": datetime.now().isoformat()
-        }
-        return JSONResponse(status_code=200, content=fallback_response)
 
 # Analysis endpoint
 @app.post("/analyze-script", response_model=AnalyzeScriptResponse)
@@ -262,12 +141,8 @@ async def analyze_script(
         # Validate analysis result
         try:
             from agents.states.states import ComprehensiveAnalysis
-            # Validate by creating a temporary object if analysis_data is a dict
-            if isinstance(analysis_data, dict):
-                temp_analysis = ComprehensiveAnalysis(**analysis_data)
-            else:
-                # If it's already a ComprehensiveAnalysis object, use it directly
-                temp_analysis = analysis_data
+            # Validate by creating a temporary object
+            temp_analysis = ComprehensiveAnalysis(**analysis_data)
             logger.info("✅ Analysis validation passed")
         except Exception as validation_error:
             logger.warning(f"Analysis validation warning: {validation_error}")
@@ -440,8 +315,8 @@ async def get_all_analyzed_scripts(
                 order_direction=order_direction
             )
             total_count = AnalyzedScriptService.get_scripts_count(db)
-        
-        return {
+
+            data_to_return = {
             "success": True,
             "data": [script.to_summary_dict() for script in scripts],
             "pagination": {
@@ -453,6 +328,11 @@ async def get_all_analyzed_scripts(
             },
             "search_term": search
         }
+            
+          #  print(data_to_return['data'][0]['filename'].split('.')[0])
+        
+        # update_data = data_to_return['data'][0]['filename'].split('.')[0]
+        return data_to_return
         
     except Exception as e:
         logger.error(f"Failed to retrieve scripts: {str(e)}")
@@ -508,7 +388,60 @@ async def delete_analyzed_script(
     except Exception as e:
         logger.error(f"Failed to delete script {script_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete script: {str(e)}")
+
+# Update analyzed script status
+@app.put("/analyzed-scripts/{script_id}", response_model=DatabaseScriptResponse)
+async def update_analyzed_script(
+    script_id: str,
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """Update an analyzed script (primarily for status changes)"""
     
+    try:
+        # Get the current script
+        script = AnalyzedScriptService.get_analyzed_script_by_id(db, script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Analyzed script not found")
+        
+        # Extract allowed update fields
+        allowed_fields = ['status', 'title', 'description']
+        update_data = {}
+        
+        for field in allowed_fields:
+            if field in request:
+                if field == 'status':
+                    # Map frontend status to backend status
+                    frontend_status = request[field].upper()
+                    backend_status_map = {
+                        'ACTIVE': 'pending_review',
+                        'REVIEW': 'pending_review', 
+                        'COMPLETED': 'completed',
+                        'ERROR': 'error'
+                    }
+                    update_data['status'] = backend_status_map.get(frontend_status, 'pending_review')
+                elif field == 'title':
+                    # Update filename for title changes
+                    update_data['filename'] = request[field]
+                # Note: description is not stored in AnalyzedScript model
+        
+        # Update the script
+        updated_script = AnalyzedScriptService.update_analyzed_script(db, script_id, **update_data)
+        
+        if not updated_script:
+            raise HTTPException(status_code=404, detail="Failed to update script")
+        
+        return {
+            "success": True,
+            "message": f"Script {script_id} updated successfully",
+            "data": updated_script.to_dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update script {script_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update script: {str(e)}")
 
 
 # Manual human-in-the-loop
@@ -551,8 +484,8 @@ async def provide_human_feedback(
             # updated_result = await workflow.ainvoke(workflow_state)
             
             # Update database record
-            setattr(script, 'status', "pending_revision")
-            setattr(script, 'error_message', f"Human feedback: {feedback.feedback_text}")
+            script.status = "pending_revision"
+            script.error_message = f"Human feedback: {feedback.feedback_text}"
             db.commit()
             
             return {
@@ -566,10 +499,10 @@ async def provide_human_feedback(
         
         else:
             # Just record the feedback
-            setattr(script, 'status', "completed_with_feedback" if feedback.approved else "needs_attention")
+            script.status = "completed_with_feedback" if feedback.approved else "needs_attention"
             if feedback.feedback_text:
                 existing_error = script.error_message or ""
-                setattr(script, 'error_message', f"{existing_error}\nHuman feedback: {feedback.feedback_text}".strip())
+                script.error_message = f"{existing_error}\nHuman feedback: {feedback.feedback_text}".strip()
             
             db.commit()
             
@@ -622,518 +555,345 @@ async def get_scripts_awaiting_feedback(
     except Exception as e:
         logger.error(f"Failed to retrieve scripts awaiting feedback: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve scripts: {str(e)}")
-
-# =============================================
-# PROJECT MANAGEMENT ENDPOINTS
-# =============================================
-
-# Pydantic models for request/response
-class CreateProjectRequest(BaseModel):
-    title: str
-    description: Optional[str] = None
-
-class UpdateProjectRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    budget_total: Optional[float] = None
-    estimated_duration_days: Optional[int] = None
-
-class ProjectResponse(BaseModel):
-    success: bool
-    project: Dict[str, Any]
+    
+class ChatRequest(BaseModel):
     message: str
 
-class ProjectListResponse(BaseModel):
-    success: bool
-    data: List[Dict[str, Any]]
-    pagination: Dict[str, Any]
-
-# Authentication models
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-class RegisterRequest(BaseModel):
-    email: str
-    username: str
-    password: str
-    full_name: Optional[str] = None
-
-class AuthResponse(BaseModel):
-    success: bool
-    access_token: str
-    user: Dict[str, Any]
-
-# =============================================
-# AUTHENTICATION ENDPOINTS
-# =============================================
-
-@app.post("/auth/login", response_model=AuthResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
-    """User login endpoint"""
+async def llm_based_fallback_response(user_message: str, script_data: dict, script_title: str) -> str:
+    """Use LLM to analyze script data and provide intelligent responses"""
     try:
-        user = UserService.authenticate_user(db, request.email, request.password)
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+        # Import a simple LLM model for fallback
+        from agents.utils.gemini_model import get_model
+        from pydantic_ai import Agent
         
-        # Generate simple token (in production, use proper JWT)
-        token = f"token_{user.id}_{int(time.time())}"
+        # Extract scene data for analysis
+        scenes_data = []
+        if script_data and isinstance(script_data, dict):
+            # Try different paths to find scenes
+            if 'script_data' in script_data and 'scenes' in script_data['script_data']:
+                scenes_data = script_data['script_data']['scenes']
+            elif 'scenes' in script_data:
+                scenes_data = script_data['scenes']
+            elif 'script_breakdown' in script_data:
+                scenes_data = script_data['script_breakdown'].get('scenes', [])
         
-        return {
-            "success": True,
-            "access_token": token,
-            "user": user.to_dict()
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Login failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Login failed")
+        # Count unique characters if this is a character-related question
+        character_count = 0
+        unique_characters = set()
+        if scenes_data and ('cast' in user_message.lower() or 'character' in user_message.lower() or 'how many' in user_message.lower()):
+            for scene in scenes_data:
+                characters = scene.get('characters_present', scene.get('characters', []))
+                if characters:
+                    unique_characters.update(characters)
+            character_count = len(unique_characters)
+        
+        # Create a specialized analysis agent
+        analysis_prompt = f"""
+You are a script analysis expert. You have been given complete script analysis data for '{script_title}' and need to answer the user's question by carefully analyzing the provided data.
 
-@app.post("/auth/register", response_model=AuthResponse)
-async def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    """User registration endpoint"""
-    try:
-        # Check if user exists
-        existing_user = UserService.get_user_by_email(db, request.email)
-        if existing_user:
-            raise HTTPException(status_code=400, detail="User already exists")
+IMPORTANT: You must read through and analyze the actual scene breakdown data provided to answer questions accurately.
+
+The user asked: "{user_message}"
+
+Script Analysis Summary:
+- Script Title: {script_title}
+- Number of scenes: {len(scenes_data)}
+- Number of unique characters found: {character_count}
+- Unique characters: {list(unique_characters) if unique_characters else 'None found'}
+
+Here is the complete script analysis data:
+{json.dumps(script_data, indent=2)[:3000]}... (truncated for performance)
+
+Scene breakdown preview (first 3 scenes):
+{json.dumps(scenes_data[:3] if scenes_data else [], indent=2)}
+
+Instructions:
+1. For character/cast questions: The script has {character_count} unique characters: {list(unique_characters) if unique_characters else 'none found'}
+2. For questions about scenes with same locations and characters, analyze each scene's location and character list
+3. For budget questions, look at cost breakdown data
+4. For location questions, analyze location data from scenes
+5. Provide specific, accurate answers based on the actual data
+6. Be conversational and helpful
+
+Answer the user's question based on your analysis of this script data. Be specific and reference actual scene numbers, character names, locations, and other data from the analysis.
+"""
         
-        # Create new user
-        user = UserService.create_user(
-            db=db,
-            email=request.email,
-            username=request.username,
-            password=request.password,
-            full_name=request.full_name
+        # Create a simple agent for analysis
+        analysis_agent = Agent(
+            model=get_model(),
+            system_prompt="You are a script analysis expert who carefully analyzes script data to answer user questions accurately."
         )
         
-        # Generate simple token
-        token = f"token_{user.id}_{int(time.time())}"
+        # Get LLM response
+        response = await analysis_agent.run(analysis_prompt)
         
-        return {
-            "success": True,
-            "access_token": token,
-            "user": user.to_dict()
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Registration failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Registration failed")
+        # Extract response text
+        if hasattr(response, 'data'):
+            return str(response.data)
+        elif hasattr(response, 'content'):
+            return str(response.content)
+        else:
+            return str(response)
+            
+    except Exception as fallback_error:
+        logger.error(f"LLM fallback failed: {str(fallback_error)}")
+        
+        # Try to give a specific answer for character questions using extracted data
+        if character_count > 0 and ('cast' in user_message.lower() or 'character' in user_message.lower() or 'how many' in user_message.lower()):
+            return f"Based on the script analysis for '{script_title}', there are {character_count} characters in this script: {', '.join(list(unique_characters))}."
+        
+        # Only use hardcoded fallback as last resort
+        return generate_simple_fallback_response(user_message, script_data, script_title)
 
-@app.get("/auth/profile")
-async def get_profile():
-    """Get user profile (simplified)"""
-    # In production, extract user from JWT token
-    return {
-        "success": True,
-        "user": {
-            "id": "demo_user",
-            "email": "demo@example.com",
-            "username": "demo_user",
-            "full_name": "Demo User"
-        }
-    }
+def analyze_scenes_with_same_location_and_characters(scenes_data: list, script_title: str) -> str:
+    """Analyze scenes that have the same location with the exact same characters"""
+    if not scenes_data:
+        return f"No scene data available for '{script_title}'"
+    
+    # Group scenes by location and characters
+    location_character_groups = {}
+    
+    for scene in scenes_data:
+        # Get scene info
+        scene_num = scene.get("scene_number", scene.get("number", "Unknown"))
+        location = scene.get("location", scene.get("scene_location", "Unknown Location"))
+        characters = scene.get("characters_present", scene.get("characters", []))
+        scene_header = scene.get("scene_header", scene.get("heading", f"Scene {scene_num}"))
+        
+        # Normalize location and characters for comparison
+        location_normalized = location.strip().upper() if location else "UNKNOWN"
+        characters_set = frozenset(char.strip().upper() for char in characters if char) if characters else frozenset()
+        
+        # Create a key combining location and characters
+        key = (location_normalized, characters_set)
+        
+        if key not in location_character_groups:
+            location_character_groups[key] = []
+        
+        location_character_groups[key].append({
+            "scene_number": scene_num,
+            "scene_header": scene_header,
+            "location": location,
+            "characters": characters
+        })
+    
+    # Find groups with multiple scenes
+    matching_groups = []
+    for (location, characters_set), scenes in location_character_groups.items():
+        if len(scenes) > 1 and location != "UNKNOWN" and len(characters_set) > 0:
+            matching_groups.append({
+                "location": location,
+                "characters": sorted(list(characters_set)),
+                "scenes": scenes,
+                "scene_count": len(scenes)
+            })
+    
+    # Generate response
+    if not matching_groups:
+        return f"In '{script_title}', no scenes share the exact same location with the exact same characters. Each scene appears to have a unique combination of location and cast."
+    
+    response = f"In '{script_title}', I found {len(matching_groups)} location(s) where multiple scenes involve the same characters:\n\n"
+    
+    total_matching_scenes = 0
+    for group in matching_groups:
+        total_matching_scenes += group["scene_count"]
+        location_name = group["location"].title() if group["location"] != "UNKNOWN" else "Unknown Location"
+        
+        response += f"📍 **{location_name}**\n"
+        response += f"   Characters: {', '.join(group['characters'])}\n"
+        response += f"   Scenes ({group['scene_count']}):\n"
+        
+        for scene in group["scenes"]:
+            response += f"   • Scene {scene['scene_number']}: {scene['scene_header']}\n"
+        response += "\n"
+    
+    response += f"**Summary**: {total_matching_scenes} scenes total involve the same location with the exact same characters across {len(matching_groups)} different location(s)."
+    
+    return response
 
-# =============================================
-# PROJECT ENDPOINTS
-# =============================================
+def generate_simple_fallback_response(user_message: str, script_data: dict, script_title: str) -> str:
+    """Last resort fallback when both main chatbot and LLM fallback fail"""
+    return f"I'm experiencing technical difficulties analyzing '{script_title}'. Both my main AI system and backup analysis are currently unavailable. Please try your question again in a moment, or contact support if the issue persists."
 
-@app.post("/create-project-with-script", response_model=ProjectResponse)
-async def create_project_with_script(
-    title: str = Form(...),
-    description: Optional[str] = Form(None),
-    file: UploadFile = File(...),
+@app.post("/chat/{script_id}")
+async def chat_about_script(
+    script_id: str,
+    request: ChatRequest,
     db: Session = Depends(get_db)
 ):
-    """Create a new project with script analysis"""
+    """Chat about a specific analyzed script with intelligent conversation capability"""
+    
     try:
-        # Create project
-        project = ProjectService.create_project(
-            db=db,
-            title=title,
-            description=description
-        )
+        logger.info(f"Chat request for script {script_id}: {request.message}")
         
-        # Analyze script
-        validator = FileValidator()
-        validator.validate_file(file)
-        
-        temp_file_path = None
-        try:
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-                content = await file.read()
-                temp_file.write(content)
-                temp_file_path = temp_file.name
-            
-            # Run analysis
-            result = await run_optimized_script_analysis(temp_file_path)
-            
-            # Extract analysis data
-            comprehensive_analysis = result.get('comprehensive_analysis')
-            if comprehensive_analysis:
-                if hasattr(comprehensive_analysis, 'model_dump'):
-                    analysis_data = comprehensive_analysis.model_dump()
-                elif hasattr(comprehensive_analysis, 'dict'):
-                    analysis_data = comprehensive_analysis.dict()
-                else:
-                    analysis_data = comprehensive_analysis
-            else:
-                analysis_data = {}
-            
-            # Save analysis linked to project
-            script = AnalyzedScriptService.create_analyzed_script(
-                db=db,
-                filename=file.filename or "unknown.pdf",
-                original_filename=file.filename or "unknown.pdf",
-                file_size_bytes=len(content),
-                analysis_data=analysis_data if isinstance(analysis_data, dict) else analysis_data.__dict__,
-                processing_time=result.get('total_processing_time'),
-                api_calls_used=result.get('api_calls_used') or 2,
-                project_id=str(project.id)
-            )
-            
-            # Update project with script info
-            ProjectService.update_project(
-                db=db,
-                project_id=str(project.id),
-                script_filename=file.filename or "unknown.pdf",
-                budget_total=script.estimated_budget,
-                estimated_duration_days=30  # Default estimate
-            )
-            
-            # Refresh project to get updated data
-            updated_project = ProjectService.get_project_by_id(db, str(project.id))
-            
-            return {
-                "success": True,
-                "project": updated_project.to_dict() if updated_project else project.to_dict(),
-                "message": "Project created and script analyzed successfully"
-            }
-            
-        finally:
-            # Clean up temporary file
-            if temp_file_path and os.path.exists(temp_file_path):
-                try:
-                    os.unlink(temp_file_path)
-                except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
-                    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Project creation failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Project creation failed: {str(e)}")
-
-@app.get("/projects/", response_model=ProjectListResponse)
-async def get_projects(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db)
-):
-    """Get all projects"""
-    try:
-        projects = ProjectService.get_projects(db=db, skip=skip, limit=limit)
-        total = ProjectService.get_projects_count(db)
-        
-        # Convert projects to dict and add demo scriptBreakdown if missing
-        project_data = []
-        for project in projects:
-            project_dict = project.to_dict()
-            
-            # If project doesn't have scriptBreakdown, add demo data
-            if 'scriptBreakdown' not in project_dict or not project_dict['scriptBreakdown']:
-                project_dict['scriptBreakdown'] = {
-                    "scenes": [
-                        {
-                            "number": 1,
-                            "heading": f"EXT. LOCATION - DAY",
-                            "location": "Demo Location",
-                            "time": "DAY",
-                            "characters": ["CHARACTER A", "CHARACTER B"],
-                            "props": ["Prop 1", "Prop 2"],
-                            "wardrobe": ["Costume 1", "Costume 2"],
-                            "sfx": ["Sound 1", "Sound 2"],
-                            "notes": f"Demo scene for {project.title}",
-                            "budget": "Medium",
-                            "dialogues": [
-                                "CHARACTER A: This is a demo dialogue.",
-                                "CHARACTER B: This is another demo dialogue."
-                            ],
-                            "estimatedDuration": "2-3 minutes"
-                        },
-                        {
-                            "number": 2,
-                            "heading": f"INT. INTERIOR - NIGHT",
-                            "location": "Demo Interior",
-                            "time": "NIGHT",
-                            "characters": ["CHARACTER A", "CHARACTER C"],
-                            "props": ["Interior Prop 1", "Interior Prop 2"],
-                            "wardrobe": ["Night Costume 1", "Night Costume 2"],
-                            "sfx": ["Night Sound 1", "Night Sound 2"],
-                            "notes": f"Second demo scene for {project.title}",
-                            "budget": "Low",
-                            "dialogues": [
-                                "CHARACTER A: We need to find the solution.",
-                                "CHARACTER C: I think I know what we need to do."
-                            ],
-                            "estimatedDuration": "3-4 minutes"
-                        }
-                    ]
-                }
-            
-            project_data.append(project_dict)
-        
-        # If no projects in database, return demo data
-        if not projects or len(projects) == 0:
-            demo_projects = [
-                {
-                    "id": "demo-1",
-                    "title": "The Last Guardian",
-                    "description": "An epic fantasy adventure film about a mystical guardian protecting an ancient kingdom.",
-                    "status": "active",
-                    "user_id": "demo-user",
-                    "budget_total": 2500000,
-                    "estimated_duration_days": 90,
-                    "script_filename": "the_last_guardian.pdf",
-                    "created_at": "2024-01-15T00:00:00Z",
-                    "updated_at": "2024-12-20T00:00:00Z",
-                    "scripts_count": 1,
-                    "scriptBreakdown": {
-                        "scenes": [
-                            {
-                                "number": 1,
-                                "heading": "EXT. ANCIENT FOREST - DAY",
-                                "location": "Ancient Forest",
-                                "time": "DAY",
-                                "characters": ["LYRA", "GUARDIAN SPIRIT"],
-                                "props": ["Ancient sword", "Mystical crystal", "Ancient tome"],
-                                "wardrobe": ["Warrior armor", "Mystical robes"],
-                                "sfx": ["Wind sounds", "Mystical energy"],
-                                "notes": "Opening scene where Lyra discovers the ancient guardian spirit in the sacred forest.",
-                                "budget": "High",
-                                "dialogues": [
-                                    "LYRA: I can feel the ancient power calling to me.",
-                                    "GUARDIAN SPIRIT: You have been chosen, young warrior.",
-                                    "LYRA: But I am not ready for this responsibility.",
-                                    "GUARDIAN SPIRIT: Readiness comes through trials, not through waiting."
-                                ],
-                                "estimatedDuration": "3-4 minutes"
-                            },
-                            {
-                                "number": 2,
-                                "heading": "INT. LYRA'S COTTAGE - NIGHT",
-                                "location": "Cottage", 
-                                "time": "NIGHT",
-                                "characters": ["LYRA", "ELDER WOMAN"],
-                                "props": ["Fireplace", "Old books", "Healing herbs"],
-                                "wardrobe": ["Simple dress", "Elder robes"],
-                                "sfx": ["Fire crackling", "Night sounds"],
-                                "notes": "Lyra returns home to seek wisdom from the village elder.",
-                                "budget": "Medium",
-                                "dialogues": [
-                                    "ELDER WOMAN: The spirits have spoken to you, haven't they?",
-                                    "LYRA: How did you know?",
-                                    "ELDER WOMAN: I have seen the signs. The kingdom needs its guardian.",
-                                    "LYRA: I don't know if I can fulfill this destiny."
-                                ],
-                                "estimatedDuration": "2-3 minutes"
-                            }
-                        ]
-                    }
-                }
-            ]
-            
-            return {
-                "success": True,
-                "data": demo_projects,
-                "pagination": {
-                    "skip": 0,
-                    "limit": len(demo_projects),
-                    "total": len(demo_projects),
-                    "has_more": False
-                }
-            }
-        
-        return {
-            "success": True,
-            "data": project_data,
-            "pagination": {
-                "skip": skip,
-                "limit": limit,
-                "total": total,
-                "has_more": (skip + limit) < total
-            }
-        }
-    except Exception as e:
-        logger.error(f"Failed to retrieve projects: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve projects")
-
-@app.get("/projects/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: str, db: Session = Depends(get_db)):
-    """Get a specific project"""
-    try:
-        project = ProjectService.get_project_by_id(db, project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        return {
-            "success": True,
-            "project": project.to_dict(),
-            "message": "Project retrieved successfully"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to retrieve project: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve project")
-
-@app.put("/projects/{project_id}", response_model=ProjectResponse)
-async def update_project(
-    project_id: str,
-    request: UpdateProjectRequest,
-    db: Session = Depends(get_db)
-):
-    """Update a project with flexible fields"""
-    try:
-        # Convert request to dict and filter out None values
-        update_data = {k: v for k, v in request.dict().items() if v is not None}
-        
-        if not update_data:
-            raise HTTPException(status_code=400, detail="No valid fields provided for update")
-        
-        project = ProjectService.update_project(
-            db=db,
-            project_id=project_id,
-            **update_data
-        )
-        
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        return {
-            "success": True,
-            "project": project.to_dict(),
-            "message": "Project updated successfully"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update project: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update project")
-
-@app.delete("/projects/{project_id}")
-async def delete_project(project_id: str, db: Session = Depends(get_db)):
-    """Delete a project"""
-    try:
-        success = ProjectService.delete_project(db, project_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        return {
-            "success": True,
-            "message": "Project deleted successfully"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to delete project: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete project")
-
-@app.get("/projects/{project_id}/analysis")
-async def get_project_analysis(project_id: str, db: Session = Depends(get_db)):
-    """Get project analysis data"""
-    try:
-        project = ProjectService.get_project_by_id(db, project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        # Get the latest script analysis for this project
-        scripts = project.analyzed_scripts
-        if not scripts:
-            raise HTTPException(status_code=404, detail="No analysis found for this project")
-        
-        # Get the most recent script
-        latest_script = scripts[0]  # Assuming they're ordered by creation date
-        
-        return {
-            "success": True,
-            "analysis": latest_script.to_dict(),
-            "message": "Analysis retrieved successfully"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to retrieve analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve analysis")
-
-# =============================================
-# ALTERNATIVE SCRIPT ANALYSIS ENDPOINTS
-# =============================================
-
-@app.post("/analyze-script-file")
-async def analyze_script_file(file: UploadFile = File(...)):
-    """Alternative endpoint for script file analysis (frontend compatibility)"""
-    # This redirects to the main analyze-script endpoint
-    return await analyze_script(file)
-
-@app.post("/analyze-script-text")
-async def analyze_script_text(request: Dict[str, str] = Body(...)):
-    """Analyze script from text content"""
-    # This is a placeholder - in production, you'd handle text analysis
-    return {
-        "success": False,
-        "message": "Text analysis not implemented yet. Please use file upload.",
-        "error": "TEXT_ANALYSIS_NOT_IMPLEMENTED"
-    }
-
-# =============================================
-# SCRIPTS ENDPOINTS
-# =============================================
-
-@app.get("/scripts/", response_model=ScriptListResponse)
-async def get_analyzed_scripts(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db)
-):
-    """Get all analyzed scripts"""
-    try:
-        scripts = AnalyzedScriptService.get_analyzed_scripts(db=db, skip=skip, limit=limit)
-        total = AnalyzedScriptService.get_analyzed_scripts_count(db)
-        
-        return {
-            "success": True,
-            "data": [script.to_dict() for script in scripts],
-            "pagination": {
-                "skip": skip,
-                "limit": limit,
-                "total": total,
-                "has_more": (skip + limit) < total
-            }
-        }
-    except Exception as e:
-        logger.error(f"Failed to retrieve analyzed scripts: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve analyzed scripts")
-
-@app.get("/scripts/{script_id}")
-async def get_analyzed_script(script_id: str, db: Session = Depends(get_db)):
-    """Get a specific analyzed script"""
-    try:
+        # Get the script analysis
         script = AnalyzedScriptService.get_analyzed_script_by_id(db, script_id)
         if not script:
             raise HTTPException(status_code=404, detail="Script not found")
         
-        return {
-            "success": True,
-            "script": script.to_dict(),
-            "message": "Script retrieved successfully"
+        # Get full script analysis data
+        script_data = script.to_dict()
+        logger.info(f"Script data keys: {list(script_data.keys())}")
+        
+        # Extract the comprehensive analysis from script data
+        comprehensive_analysis = script_data.get('comprehensive_analysis') or script_data.get('analysis_data')
+        if not comprehensive_analysis:
+            logger.warning("No comprehensive analysis found in script data")
+            comprehensive_analysis = script_data
+        
+        # Prepare comprehensive context for chatbot
+        context = {
+            "script_analysis": script_data,
+            "comprehensive_analysis": comprehensive_analysis,
+            "user_message": request.message,
+            "script_title": script.filename or script.original_filename,
+            "script_id": script_id
         }
+        
+        # Import the helper function
+        from agents.agent.chatbot_agent import get_script_analysis_context
+        
+        # Create a detailed prompt that includes script context and full data
+        script_title = script.filename or script.original_filename
+        script_context = get_script_analysis_context(comprehensive_analysis)
+        
+        # Extract scene data for specific analysis
+        scenes_data = []
+        if comprehensive_analysis and isinstance(comprehensive_analysis, dict):
+            # Try different paths to find scenes
+            if 'script_data' in comprehensive_analysis and 'scenes' in comprehensive_analysis['script_data']:
+                scenes_data = comprehensive_analysis['script_data']['scenes']
+            elif 'scenes' in comprehensive_analysis:
+                scenes_data = comprehensive_analysis['scenes']
+            elif 'script_breakdown' in comprehensive_analysis:
+                scenes_data = comprehensive_analysis['script_breakdown'].get('scenes', [])
+        
+        logger.info(f"Found {len(scenes_data)} scenes for analysis")
+        
+        prompt = f"""You are chatting with a user about their analyzed script titled "{script_title}".
+
+User's message: {request.message}
+
+Script Analysis Summary:
+{script_context}
+
+IMPORTANT: You have access to the complete script analysis data. For specific questions about scenes, characters, locations, or budget, analyze the actual data provided.
+
+Script Details:
+- Title: {script_title}
+- Number of scenes: {len(scenes_data)}
+- Script ID: {script_id}
+
+Scene Data Available: {json.dumps(scenes_data[:3] if scenes_data else [], indent=2)}... (showing first 3 scenes)
+
+Full Analysis Data Available:
+{json.dumps(comprehensive_analysis, indent=2)[:2000]}... (truncated for brevity)
+
+Instructions:
+1. For questions about cast/characters, count unique characters across all scenes
+2. For questions about scenes with same locations and characters, analyze each scene's location and character list  
+3. For budget questions, look at cost breakdown data
+4. For location questions, analyze location data from scenes
+5. Provide specific answers with scene numbers, character names, and other details from the analysis
+6. Be conversational and helpful while being accurate to the data
+
+Please provide a helpful response that addresses the user's question using the actual script analysis data."""
+
+        # Get chatbot response with enhanced error handling
+        try:
+            logger.info("🤖 Calling main chatbot agent...")
+            logger.info(f"🤖 User message: {request.message}")
+            logger.info(f"🤖 Script context preview: {script_context[:500]}...")
+            
+            response = await chatbot_agent.run(prompt, deps=context)
+            logger.info(f"🤖 Chatbot response type: {type(response)}")
+            
+            # Extract response text properly
+            response_text = ""
+            if hasattr(response, 'data'):
+                response_text = str(response.data)
+            elif hasattr(response, 'content'):
+                response_text = str(response.content)
+            elif hasattr(response, 'message'):
+                response_text = str(response.message)
+            else:
+                response_text = str(response)
+            
+            logger.info(f"✅ Main chatbot SUCCESS: {response_text[:200]}...")
+            
+            return {
+                "success": True,
+                "response": response_text,
+                "script_id": script_id,
+                "script_title": script_title
+            }
+            
+        except Exception as agent_error:
+            logger.error(f"❌ Main chatbot FAILED: {str(agent_error)}")
+            logger.info("🔄 Trying LLM-based fallback...")
+            
+            # Use LLM-based fallback that actually analyzes the script data
+            try:
+                fallback_response = await llm_based_fallback_response(request.message, comprehensive_analysis, script_title)
+                logger.info(f"✅ LLM fallback SUCCESS: {fallback_response[:200]}...")
+                
+                return {
+                    "success": True,
+                    "response": fallback_response,
+                    "script_id": script_id,
+                    "script_title": script_title,
+                    "fallback": True
+                }
+            except Exception as fallback_error:
+                logger.error(f"❌ LLM fallback FAILED: {str(fallback_error)}")
+                logger.info("🆘 Using last resort fallback...")
+                
+                last_resort = generate_simple_fallback_response(request.message, comprehensive_analysis, script_title)
+                return {
+                    "success": True,
+                    "response": last_resort,
+                    "script_id": script_id,
+                    "script_title": script_title,
+                    "last_resort": True
+                }
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to retrieve script: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve script")
+        logger.error(f"Chat endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+@app.get("/test-llm")
+async def test_llm_connection():
+    """Test the LLM connection"""
+    try:
+        logger.info("Testing LLM connection...")
+        
+        # Test chatbot agent initialization
+        test_prompt = "Say 'Hello, I am your film production assistant!' in a friendly way."
+        test_context = {"script_analysis": {"test": "data"}}
+        
+        response = await chatbot_agent.run(test_prompt, deps=test_context)
+        
+        response_text = ""
+        if hasattr(response, 'data'):
+            response_text = str(response.data)
+        elif hasattr(response, 'content'):
+            response_text = str(response.content)
+        else:
+            response_text = str(response)
+        
+        return {
+            "success": True,
+            "message": "LLM connection successful",
+            "test_response": response_text,
+            "model_info": str(chatbot_agent.model)
+        }
+        
+    except Exception as e:
+        logger.error(f"LLM test failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "LLM connection failed"
+        }

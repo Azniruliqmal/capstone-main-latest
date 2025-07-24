@@ -1,55 +1,41 @@
 #!/usr/bin/env python3
 """
-Start the FastAPI backend server
+Start the FastAPI server for the script analysis API
 """
 
 import uvicorn
+from api.api import app
+from database.database import init_database
 import logging
-import os
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 def start_server():
-    """Start the uvicorn server"""
+    """Start the FastAPI server"""
     try:
-        # Change to backend directory
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(backend_dir)
+        # Initialize database
+        logger.info("Initializing database...")
+        init_database()
+        logger.info("Database initialized successfully")
         
-        logger.info("Starting FastAPI backend server...")
-        logger.info(f"Working directory: {os.getcwd()}")
-        
-        # Start uvicorn server
+        # Start the server
+        logger.info("Starting FastAPI server...")
         uvicorn.run(
-            "api.api:app",
-            host="0.0.0.0",
-            port=8000,
-            reload=True,
-            log_level="info"
-        )
-        
-    except KeyboardInterrupt:
-        logger.info("Server stopped by user")
-    except Exception as e:
-        logger.error(f"Error starting server: {e}")
-        raise
-
-if __name__ == "__main__":
-    start_server()
-
-if __name__ == "__main__":
-    print("Starting FastAPI server with chat endpoint...")
-    try:
-        uvicorn.run(
-            "api.api:app",
+            app,
             host="127.0.0.1",
             port=8000,
             reload=True,
             log_level="info"
         )
+        
     except Exception as e:
-        print(f"Failed to start server: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Failed to start server: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    start_server()

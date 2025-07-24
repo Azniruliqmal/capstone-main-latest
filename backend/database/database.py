@@ -1,13 +1,12 @@
 import os
 import logging
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 import time
-from urllib.parse import quote_plus
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -19,7 +18,6 @@ DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME")
 DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
-USE_SQLITE = os.getenv("USE_SQLITE", "false").lower() == "true"
 
 # Connection pool settings
 DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
@@ -27,39 +25,26 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
 DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600"))
 
-# Determine database URL based on configuration
-if USE_SQLITE or not all([DB_USER, DB_PASSWORD, DB_HOST, DB_NAME]):
-    # Use SQLite for development/testing when PostgreSQL is not available
-    logger.info("Using SQLite database for development")
-    DATABASE_URL = "sqlite:///./script_analysis.db"
-    
-    # SQLite Engine with simpler configuration
-    engine = create_engine(
-        DATABASE_URL,
-        echo=DB_ECHO,
-        connect_args={"check_same_thread": False}  # SQLite specific
-    )
-else:
-    # Use PostgreSQL for production
-    logger.info("Using PostgreSQL database")
-    # URL encode the password to handle special characters
-    encoded_password = quote_plus(DB_PASSWORD) if DB_PASSWORD else ""
-    DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    
-    # Enhanced SQLAlchemy Engine with optimized connection pooling
-    engine = create_engine(
-        DATABASE_URL,
-        echo=DB_ECHO,
-        poolclass=QueuePool,
-        pool_size=DB_POOL_SIZE,
-        max_overflow=DB_MAX_OVERFLOW,
-        pool_timeout=DB_POOL_TIMEOUT,
-        pool_recycle=DB_POOL_RECYCLE,
-        pool_pre_ping=True,  # Validate connections before use
-        connect_args={
-            "connect_timeout": 10,
-            "application_name": "script_analysis_api"
-        }
+# Validate required environment variables
+if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_NAME]):
+    raise ValueError("Missing required database environment variables")
+
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# Enhanced SQLAlchemy Engine with optimized connection pooling
+engine = create_engine(
+    DATABASE_URL,
+    echo=DB_ECHO,
+    poolclass=QueuePool,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=DB_POOL_TIMEOUT,
+    pool_recycle=DB_POOL_RECYCLE,
+    pool_pre_ping=True,  # Validate connections before use
+    connect_args={
+        "connect_timeout": 10,
+        "application_name": "script_analysis_api"
+    }
 )
 
 # Connection event listeners for monitoring
@@ -98,7 +83,7 @@ def check_database_connection() -> bool:
     """Check if database connection is healthy"""
     try:
         with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+            connection.execute("SELECT 1")
         return True
     except Exception as e:
         logger.error(f"Database health check failed: {str(e)}")
@@ -108,17 +93,17 @@ def get_database_info() -> dict:
     """Get database connection information"""
     try:
         with engine.connect() as connection:
-            result = connection.execute(text("SELECT version()"))
+            result = connection.execute("SELECT version()")
             version = result.fetchone()[0]
             
             pool = engine.pool
             return {
                 "database_version": version,
-                "pool_size": getattr(pool, 'size', lambda: 0)(),
-                "checked_in": getattr(pool, 'checkedin', lambda: 0)(),
-                "checked_out": getattr(pool, 'checkedout', lambda: 0)(),
-                "overflow": getattr(pool, 'overflow', lambda: 0)(),
-                "invalid": getattr(pool, 'invalid', lambda: 0)()
+                "pool_size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow(),
+                "invalid": pool.invalid()
             }
     except Exception as e:
         logger.error(f"Failed to get database info: {str(e)}")
@@ -128,9 +113,6 @@ def get_database_info() -> dict:
 def create_tables():
     """Create database tables with enhanced error handling"""
     try:
-        # Import all models to ensure they're registered
-        from database.models import User, Project, AnalyzedScript
-        
         logger.info("Creating database tables...")
         Base.metadata.create_all(engine)
         logger.info("Database tables created successfully")
@@ -163,13 +145,13 @@ def get_pool_status() -> dict:
     try:
         pool = engine.pool
         return {
-            "pool_size": getattr(pool, 'size', lambda: 0)(),
-            "checked_in_connections": getattr(pool, 'checkedin', lambda: 0)(),
-            "checked_out_connections": getattr(pool, 'checkedout', lambda: 0)(),
-            "overflow_connections": getattr(pool, 'overflow', lambda: 0)(),
-            "invalid_connections": getattr(pool, 'invalid', lambda: 0)(),
-            "total_connections": getattr(pool, 'size', lambda: 0)() + getattr(pool, 'overflow', lambda: 0)(),
-            "available_connections": getattr(pool, 'checkedin', lambda: 0)()
+            "pool_size": pool.size(),
+            "checked_in_connections": pool.checkedin(),
+            "checked_out_connections": pool.checkedout(),
+            "overflow_connections": pool.overflow(),
+            "invalid_connections": pool.invalid(),
+            "total_connections": pool.size() + pool.overflow(),
+            "available_connections": pool.checkedin()
         }
     except Exception as e:
         logger.error(f"Failed to get pool status: {str(e)}")

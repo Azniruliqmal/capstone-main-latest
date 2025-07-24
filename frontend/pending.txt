@@ -1,0 +1,19 @@
+> solve the state management problem, in frontend /projects whenever a View Details of a particular project      
+  is clicked, currently it route to /breakdown?projectId=api-projectid 
+
+  once this is loaded, it should persist using the project id in /budget without the need to click on drop       ──╮
+  down and confirm. 
+
+*note that if user did not route through the view details of a particular projectid, it should load the default project in /budget
+
+  Update Todos
+  ⎿  ☐ Examine current routing and state management in frontend
+     ☐ Check how project ID is handled in breakdown view
+     ☐ Examine budget view and dropdown logic
+     ☐ Implement project ID persistence in state management
+     ☐ Update budget view to use persisted project ID
+
+
+
+chatbot system prompt shouldnt be restrictive but answer should be kept to context of individual projectid's related query. 
+

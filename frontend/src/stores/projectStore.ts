@@ -45,6 +45,8 @@ interface Project {
   updated_at: string;
   scripts_count: number;
   analysis_data?: any;
+  type?: string; // 'api-script' for uploaded scripts, undefined for demo projects
+  script_id?: string; // ID of the associated script in database
   scriptBreakdown?: {
     scenes: any[];
     budget?: Record<string, string>;
@@ -174,7 +176,7 @@ export const useProjectStore = defineStore('project', () => {
   const statusFilter = ref<string>('');
 
   // Base API URL - adjust based on your environment
-  const API_BASE = 'http://127.0.0.1:8000';
+  const API_BASE = 'http://localhost:8000';
   
   // Initialize auth state from localStorage
   const initializeAuth = () => {
@@ -186,6 +188,22 @@ export const useProjectStore = defineStore('project', () => {
       accessToken.value = token;
       user.value = JSON.parse(userData);
       isLoggedIn.value = true;
+    }
+  };
+
+  // Initialize selected project state from localStorage
+  const initializeSelectedProject = () => {
+    const savedProjectId = localStorage.getItem('selectedProjectId');
+    const savedProjectTitle = localStorage.getItem('selectedProjectTitle');
+    
+    if (savedProjectId) {
+      selectedProjectId.value = savedProjectId;
+      console.log('🔄 Restored selectedProjectId from localStorage:', savedProjectId);
+    }
+    
+    if (savedProjectTitle) {
+      selectedProjectTitle.value = savedProjectTitle;
+      console.log('🔄 Restored selectedProjectTitle from localStorage:', savedProjectTitle);
     }
   };
 
@@ -311,11 +329,15 @@ export const useProjectStore = defineStore('project', () => {
     scripts.value = [];
     currentScript.value = null;
     currentAnalysis.value = null;
+    selectedProjectId.value = '';
+    selectedProjectTitle.value = '';
     
     // Clear localStorage
     localStorage.removeItem('access_token');
     localStorage.removeItem('user_data');
     localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('selectedProjectId');
+    localStorage.removeItem('selectedProjectTitle');
   };
 
   // Demo data initialization
@@ -328,7 +350,7 @@ export const useProjectStore = defineStore('project', () => {
         description: 'An epic fantasy adventure film about a mystical guardian protecting an ancient kingdom.',
         status: 'COMPLETED',
         user_id: 'demo-user',
-        budget_total: 2500000,
+        budget_total: 2500,
         estimated_duration_days: 90,
         script_filename: 'penjaga_akhir_zaman.pdf',
         created_at: new Date('2024-01-15').toISOString(),
@@ -419,6 +441,21 @@ export const useProjectStore = defineStore('project', () => {
               estimatedDuration: '3-4 minutes'
             },
             {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
               number: 5,
               heading: 'INT. LYRA\'S HOUSE - NIGHT',
               location: 'Cottage',
@@ -439,13 +476,13 @@ export const useProjectStore = defineStore('project', () => {
             },
           ],
           budget: {
-            talent: 'RM 450000',
-            location: 'RM 380000',
-            propsSet: 'RM 320000',
-            wardrobeMakeup: 'RM 280000',
-            sfxVfx: 'RM 650000',
-            crew: 'RM 350000',
-            miscellaneous: 'RM 70000'
+            talent: 'RM 4500',
+            location: 'RM 38000',
+            propsSet: 'RM 3200',
+            wardrobeMakeup: 'RM 28000',
+            sfxVfx: 'RM 650',
+            crew: 'RM 350',
+            miscellaneous: 'RM 700'
           }
         }
       },
@@ -455,7 +492,7 @@ export const useProjectStore = defineStore('project', () => {
         description: 'A gritty crime thriller set in the underground world of a major metropolitan city.',
         status: 'COMPLETED',
         user_id: 'demo-user',
-        budget_total: 1800000,
+        budget_total: 2000,
         estimated_duration_days: 75,
         script_filename: 'polis_evolution_707.pdf',
         created_at: new Date('2024-02-10').toISOString(),
@@ -488,6 +525,21 @@ export const useProjectStore = defineStore('project', () => {
               ],
               estimatedDuration: '2-3 minutes'
             },
+                        {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
+            {
+              number: 1,
+            },
             {
               number: 2,
               heading: 'INT. POLICE STATION - DAY',
@@ -519,7 +571,7 @@ export const useProjectStore = defineStore('project', () => {
           }
         }
       },
-      {
+      /*{
         id: 'demo-3',
         title: 'Tentang Matahari',
         description: 'A romantic drama about two musicians who find love through their shared passion for music.',
@@ -656,22 +708,36 @@ export const useProjectStore = defineStore('project', () => {
             crew: 'RM 650000',
             miscellaneous: 'RM 350000'
           }
-        }
-      }
+        } 
+      }*/
     ];
     
     projects.value = demoProjects as Project[];
     
-    // Set initial selected project
-    if (demoProjects.length > 0) {
+    // Only set initial selected project if none is already persisted
+    if (demoProjects.length > 0 && !selectedProjectId.value) {
       selectedProjectId.value = demoProjects[0].id;
       selectedProjectTitle.value = demoProjects[0].title;
       currentProject.value = demoProjects[0] as Project;
+      console.log('Setting default project since none was persisted:', demoProjects[0].title);
+    } else if (selectedProjectId.value) {
+      console.log('Keeping persisted project selection:', selectedProjectId.value);
     }
     
     console.log('Demo data loaded:', projects.value.length, 'projects')
     console.log('First project:', projects.value[0]?.title)
     console.log('Selected project ID:', selectedProjectId.value)
+    
+    // After loading projects, try to resolve any persisted project ID that wasn't found before
+    if (selectedProjectId.value) {
+      const project = projects.value.find(p => p.id === selectedProjectId.value);
+      if (project && !selectedProjectTitle.value) {
+        selectedProjectTitle.value = project.title;
+        currentProject.value = project;
+        localStorage.setItem('selectedProjectTitle', project.title);
+        console.log('✅ Resolved persisted project ID after demo data load:', project.title);
+      }
+    }
   };
 
   // Enhanced authentication that loads demo data
@@ -990,6 +1056,17 @@ export const useProjectStore = defineStore('project', () => {
       } else {
         console.log('No additional projects from API, using demo data only');
       }
+      
+      // After loading all projects, try to resolve any persisted project ID
+      if (selectedProjectId.value) {
+        const project = projects.value.find(p => p.id === selectedProjectId.value);
+        if (project && !selectedProjectTitle.value) {
+          selectedProjectTitle.value = project.title;
+          currentProject.value = project;
+          localStorage.setItem('selectedProjectTitle', project.title);
+          console.log('✅ Resolved persisted project ID after fetchProjects:', project.title);
+        }
+      }
     } catch (err) {
       // If API fails, we already have demo data loaded
       console.log('API not available, using demo data only');
@@ -1114,7 +1191,37 @@ export const useProjectStore = defineStore('project', () => {
   const analyzeAndSave = async (file: File): Promise<SaveResponse | null> => {
     const analysisResult = await analyzeScript(file);
     if (analysisResult && analysisResult.success) {
-      return await saveAnalysis(analysisResult);
+      const saveResult = await saveAnalysis(analysisResult);
+      
+      if (saveResult && saveResult.success) {
+        // Create a project entry for the uploaded script with ACTIVE status
+        const newProject: Project = {
+          id: `api-${saveResult.database_id}`, // Prefix with 'api-' to distinguish from demo projects
+          title: file.name.replace(/\.[^/.]+$/, ''), // Remove file extension
+          description: `Script analysis project for ${file.name}`,
+          status: 'REVIEW', // Set as REVIEW by default (maps to pending_review in backend)
+          user_id: user.value?.id || 'current-user',
+          budget_total: analysisResult.data?.cost_breakdown?.total_cost || 0,
+          estimated_duration_days: 30, // Default estimation
+          script_filename: file.name,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          scripts_count: 1,
+          type: 'api-script', // Mark as API-generated script
+          script_id: saveResult.database_id, // Link to the script in database
+          analysis_data: analysisResult.data
+        };
+        
+        // Add to projects list at the beginning
+        projects.value.unshift(newProject);
+        
+        // Set as selected project
+        setSelectedProject(newProject.id);
+        
+        console.log('✅ Created new project for uploaded script:', newProject.title);
+      }
+      
+      return saveResult;
     }
     return null;
   };
@@ -1171,25 +1278,127 @@ export const useProjectStore = defineStore('project', () => {
   };
 
   const setSelectedProject = (projectIdOrTitle: string) => {
+    console.log('🔧 setSelectedProject called with:', projectIdOrTitle);
+    console.log('🔧 Current projects count:', projects.value.length);
+    console.log('🔧 Available project IDs:', projects.value.map(p => p.id));
+    
     // Try to find by ID first
     let project = projects.value.find(p => p.id === projectIdOrTitle);
+    console.log('🔧 Found by ID:', project ? `${project.title} (${project.id})` : 'NOT FOUND');
     
     // If not found by ID, try by title
     if (!project) {
       project = projects.value.find(p => p.title === projectIdOrTitle);
+      console.log('🔧 Found by title:', project ? `${project.title} (${project.id})` : 'NOT FOUND');
     }
     
     if (project) {
       selectedProjectId.value = project.id;
       selectedProjectTitle.value = project.title;
       currentProject.value = project;
+      
+      // Persist to localStorage for cross-page persistence
+      localStorage.setItem('selectedProjectId', project.id);
+      localStorage.setItem('selectedProjectTitle', project.title);
+      
+      console.log('💾 Saved selected project to localStorage:', project.id, project.title);
+    } else {
+      console.warn('⚠️ Project not found for selection:', projectIdOrTitle);
+      console.warn('⚠️ This might be because projects haven\'t loaded yet');
+      
+      // If projects haven't loaded yet, still persist the ID to localStorage
+      // so it can be picked up later when projects are loaded
+      if (projectIdOrTitle && (projectIdOrTitle.startsWith('api-') || projectIdOrTitle.startsWith('demo-'))) {
+        selectedProjectId.value = projectIdOrTitle;
+        localStorage.setItem('selectedProjectId', projectIdOrTitle);
+        console.log('💾 Persisted project ID for later resolution:', projectIdOrTitle);
+      }
     }
   };
 
   const updateProjectStatus = async (projectId: string, status: string, statusColor?: string): Promise<boolean> => {
-    const updates: any = { status };
-    // Note: statusColor is a UI concern, not stored in backend
-    return await updateProject(projectId, updates);
+    try {
+      console.log(`🔄 Updating project status for ${projectId} to ${status}`);
+      
+      // Check if this is an API script (needs backend update)
+      if (projectId.startsWith('api-')) {
+        const scriptId = projectId.replace('api-', '');
+        console.log(`📡 Making API call to update script ${scriptId} status to ${status}`);
+        
+        // Make API call to update the script status
+        const response = await apiCall(`/analyzed-scripts/${scriptId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status }),
+        });
+        
+        if (response.success) {
+          console.log(`✅ Backend updated successfully for script ${scriptId}`);
+        } else {
+          console.warn(`⚠️ Backend update may have failed for script ${scriptId}`);
+        }
+      }
+      
+      // Update frontend state regardless of backend call result
+      // First try to find in projects array
+      const projectIndex = projects.value.findIndex(p => p.id === projectId);
+      
+      if (projectIndex !== -1) {
+        // Update project in projects array
+        const oldStatus = projects.value[projectIndex].status;
+        projects.value[projectIndex].status = status;
+        
+        // Also update current project if it matches
+        if (currentProject.value?.id === projectId) {
+          currentProject.value.status = status;
+        }
+        
+        console.log(`✅ Frontend updated: Project ${projectId} status changed from ${oldStatus} to ${status}`);
+        return true;
+      }
+      
+      // If not found in projects, it might be an orphaned script - create a project for it
+      if (projectId.startsWith('api-')) {
+        const scriptId = projectId.replace('api-', '');
+        const script = scripts.value.find(s => s.id === scriptId);
+        
+        if (script) {
+          console.log(`📋 Creating project entry for script: ${scriptId}`);
+          
+          // Create a project entry for this script
+          const newProject: Project = {
+            id: projectId,
+            title: script.filename || 'Untitled Script',
+            description: `Script analysis project for ${script.filename}`,
+            status: status, // Set to the new status
+            user_id: user.value?.id || 'current-user',
+            budget_total: script.estimated_budget || 0,
+            estimated_duration_days: 30,
+            script_filename: script.filename,
+            created_at: script.created_at,
+            updated_at: new Date().toISOString(),
+            scripts_count: 1,
+            type: 'api-script',
+            script_id: scriptId,
+            analysis_data: script
+          };
+          
+          // Add to projects array
+          projects.value.unshift(newProject);
+          
+          console.log(`✅ Created and updated project ${projectId} with status: ${status}`);
+          return true;
+        }
+      }
+      
+      console.error(`❌ Project not found: ${projectId}`);
+      error.value = 'Project not found';
+      return false;
+      
+    } catch (err) {
+      console.error('❌ Failed to update project status:', err);
+      error.value = err instanceof Error ? err.message : 'Failed to update project status';
+      return false;
+    }
   };
 
   const getProjectAnalysis = async (projectId: string): Promise<any> => {
@@ -1207,6 +1416,382 @@ export const useProjectStore = defineStore('project', () => {
       isLoading.value = false;
     }
   };
+
+  // Data transformation utilities
+  const transformAPIScene = (apiScene: any): any => {
+    return {
+      number: apiScene.scene_number || 0,
+      heading: apiScene.scene_header || '',
+      location: apiScene.location || '',
+      time: apiScene.time_of_day || '',
+      characters: apiScene.characters_present || [],
+      props: apiScene.props_mentioned || [],
+      notes: apiScene.action_lines ? apiScene.action_lines.join(' ') : '',
+      budget: apiScene.estimated_budget ? `RM ${apiScene.estimated_budget}` : '',
+      dialogues: apiScene.dialogue_lines || [],
+      wardrobe: [],
+      sfx: []
+    };
+  };
+
+  const transformDemoScene = (demoScene: any): any => {
+    return {
+      number: demoScene.number || 0,
+      heading: demoScene.heading || '',
+      location: demoScene.location || '',
+      time: demoScene.time || '',
+      characters: demoScene.characters || [],
+      props: demoScene.props || [],
+      notes: demoScene.notes || '',
+      budget: demoScene.budget || '',
+      dialogues: demoScene.dialogues || [],
+      wardrobe: demoScene.wardrobe || [],
+      sfx: demoScene.sfx || []
+    };
+  };
+
+  const standardizeSceneData = (scenes: any[], isAPIData = false): any[] => {
+    if (!scenes || !Array.isArray(scenes)) return [];
+    
+    return scenes.map(scene => 
+      isAPIData ? transformAPIScene(scene) : transformDemoScene(scene)
+    );
+  };
+
+  const getScriptAnalysisData = async (scriptId: string): Promise<any> => {
+    try {
+      isLoading.value = true;
+      const script = scripts.value.find(s => s.id === scriptId);
+      
+      if (!script) {
+        throw new Error('Script not found');
+      }
+
+      // Fetch detailed script analysis if not already loaded
+      if (!currentScript.value || currentScript.value.id !== scriptId) {
+        await fetchScript(scriptId);
+      }
+
+      // Return standardized scene data
+      const analysisData = currentAnalysis.value;
+      console.log('🔍 getScriptAnalysisData - Analysis data:', analysisData);
+      
+      if (analysisData?.script_data?.scenes) {
+        const result = {
+          scenes: standardizeSceneData(analysisData.script_data.scenes, true),
+          cast_breakdown: analysisData.cast_breakdown,
+          cost_breakdown: analysisData.cost_breakdown,
+          location_breakdown: analysisData.location_breakdown,
+          props_breakdown: analysisData.props_breakdown,
+          // Also include the full analysis data for budget processing
+          comprehensive_analysis: analysisData
+        };
+        
+        console.log('🔍 getScriptAnalysisData - Returning result:', result);
+        return result;
+      }
+
+      return null;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to load analysis data';
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Budget transformation utilities
+  const parseBudgetAmount = (amount: string | number): number => {
+    if (typeof amount === 'number') return amount;
+    if (typeof amount === 'string') {
+      // Remove 'RM', spaces, and commas, then parse
+      const cleaned = amount.replace(/[RM\s,]/g, '');
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+
+  const formatBudgetAmount = (amount: number): string => {
+    if (amount === 0) return 'RM 0';
+    return `RM ${amount.toLocaleString()}`;
+  };
+
+  const transformDemoBudget = (budgetData: any): any => {
+    const categories = {
+      talent: parseBudgetAmount(budgetData.talent || 0),
+      location: parseBudgetAmount(budgetData.location || 0),
+      propsSet: parseBudgetAmount(budgetData.propsSet || 0),
+      wardrobeMakeup: parseBudgetAmount(budgetData.wardrobeMakeup || 0),
+      sfxVfx: parseBudgetAmount(budgetData.sfxVfx || 0),
+      crew: parseBudgetAmount(budgetData.crew || 0),
+      miscellaneous: parseBudgetAmount(budgetData.miscellaneous || 0)
+    };
+
+    const total = Object.values(categories).reduce((sum, amount) => sum + amount, 0);
+
+    return {
+      ...categories,
+      total
+    };
+  };
+
+  const transformAPIBudget = (apiData: any): any => {
+    console.log('🔍 transformAPIBudget - Raw API data:', apiData);
+    
+    // Try to extract budget data from API response - check nested structure
+    let costBreakdown = apiData.cost_breakdown || {};
+    
+    // If cost_breakdown is not found directly, try nested paths
+    if (!costBreakdown || Object.keys(costBreakdown).length === 0) {
+      // Try comprehensive_analysis.cost_breakdown
+      if (apiData.comprehensive_analysis?.cost_breakdown) {
+        costBreakdown = apiData.comprehensive_analysis.cost_breakdown;
+        console.log('🔍 transformAPIBudget - Found cost breakdown in comprehensive_analysis');
+      }
+      // Try data.comprehensive_analysis.cost_breakdown
+      else if (apiData.data?.comprehensive_analysis?.cost_breakdown) {
+        costBreakdown = apiData.data.comprehensive_analysis.cost_breakdown;
+        console.log('🔍 transformAPIBudget - Found cost breakdown in data.comprehensive_analysis');
+      }
+    }
+    
+    console.log('🔍 transformAPIBudget - Cost breakdown:', costBreakdown);
+    console.log('🔍 transformAPIBudget - Cost breakdown keys:', Object.keys(costBreakdown));
+    
+    // Map API data to our standard format using the specified mappings:
+    // Talent = total_cast_costs
+    // Location = total_location_costs  
+    // Crew = total_crew_costs
+    // Props & Set = total_equipment_costs + total_props_costs
+    // Wardrobe & Makeup = total_wardrobe_costs
+    const standardBudget = {
+      talent: parseBudgetAmount(costBreakdown.total_cast_costs || 0),
+      location: parseBudgetAmount(costBreakdown.total_location_costs || 0),
+      crew: parseBudgetAmount(costBreakdown.total_crew_costs || 0),
+      propsSet: parseBudgetAmount((costBreakdown.total_equipment_costs || 0) + (costBreakdown.total_props_costs || 0)),
+      wardrobeMakeup: parseBudgetAmount(costBreakdown.total_wardrobe_costs || 0),
+      sfxVfx: parseBudgetAmount(costBreakdown.total_sfx_costs || costBreakdown.total_vfx_costs || 0),
+      miscellaneous: parseBudgetAmount(costBreakdown.total_miscellaneous_costs || costBreakdown.total_other_costs || 0)
+    };
+
+    console.log('🔍 transformAPIBudget - Standard budget before total:', standardBudget);
+
+    // Calculate total from individual categories
+    const calculatedTotal = Object.values(standardBudget).reduce((sum, amount) => sum + amount, 0);
+    
+    const finalBudget = {
+      ...standardBudget,
+      total: calculatedTotal
+    };
+
+    console.log('🔍 transformAPIBudget - Final budget:', finalBudget);
+    
+    return finalBudget;
+  };
+
+  const calculateBudgetFromScenes = (scenes: any[]): any => {
+    if (!scenes || scenes.length === 0) {
+      return {
+        talent: 0,
+        location: 0,
+        propsSet: 0,
+        wardrobeMakeup: 0,
+        sfxVfx: 0,
+        crew: 0,
+        miscellaneous: 0,
+        total: 0
+      };
+    }
+
+    // Sum up budget estimates from all scenes
+    const totalSceneBudget = scenes.reduce((sum, scene) => {
+      const sceneBudget = parseBudgetAmount(scene.budget || scene.estimated_budget || 0);
+      return sum + sceneBudget;
+    }, 0);
+
+    // Estimate distribution based on typical film production ratios
+    const estimatedDistribution = {
+      talent: Math.round(totalSceneBudget * 0.35), // 35% for talent
+      location: Math.round(totalSceneBudget * 0.15), // 15% for locations
+      propsSet: Math.round(totalSceneBudget * 0.12), // 12% for props/set
+      wardrobeMakeup: Math.round(totalSceneBudget * 0.08), // 8% for wardrobe/makeup
+      sfxVfx: Math.round(totalSceneBudget * 0.20), // 20% for VFX/SFX
+      crew: Math.round(totalSceneBudget * 0.08), // 8% for crew
+      miscellaneous: Math.round(totalSceneBudget * 0.02) // 2% for miscellaneous
+    };
+
+    return {
+      ...estimatedDistribution,
+      total: totalSceneBudget
+    };
+  };
+
+  const getBudgetBreakdown = async (projectId: string): Promise<any> => {
+    try {
+      isLoading.value = true;
+      
+      console.log('🔍 getBudgetBreakdown - Starting for projectId:', projectId);
+      
+      // Find the project in combined projects list (including API scripts)
+      const project = projects.value.find(p => p.id === projectId);
+      if (!project) {
+        // If not found in projects, check if we can find it in scripts directly
+        const scriptId = projectId.startsWith('api-') ? projectId.replace('api-', '') : projectId;
+        const script = scripts.value.find(s => s.id === scriptId);
+        
+        if (script) {
+          // Create a temporary project-like object
+          const tempProject = {
+            id: `api-${script.id}`,
+            script_id: script.id,
+            title: script.filename,
+            type: 'api-script'
+          };
+          
+          console.log('🔍 getBudgetBreakdown - Found script, using as project:', tempProject.title);
+          
+          // Get script analysis data
+          const scriptData = await getScriptAnalysisData(script.id);
+          if (scriptData) {
+            return transformAPIBudget(scriptData);
+          }
+        }
+        
+        throw new Error('Project not found');
+      }
+
+      console.log('🔍 getBudgetBreakdown - Project found:', project.title, 'Type:', project.type);
+
+      // Handle API scripts
+      if (project.type === 'api-script' && project.script_id) {
+        console.log('🔍 getBudgetBreakdown - Getting script analysis data for:', project.script_id);
+        
+        // First check if we already have the analysis data in current state
+        if (currentScript.value?.id === project.script_id && currentAnalysis.value) {
+          console.log('🔍 getBudgetBreakdown - Using cached analysis data');
+          return transformAPIBudget(currentAnalysis.value);
+        }
+        
+        // Otherwise fetch the script data
+        const scriptData = await getScriptAnalysisData(project.script_id);
+        console.log('🔍 getBudgetBreakdown - Script data received:', scriptData);
+        
+        if (scriptData) {
+          // Try to get budget from cost breakdown
+          if (scriptData.cost_breakdown) {
+            console.log('🔍 getBudgetBreakdown - Using cost breakdown for budget');
+            return transformAPIBudget(scriptData);
+          }
+          // Fallback to calculating from scenes
+          else if (scriptData.scenes) {
+            console.log('🔍 getBudgetBreakdown - Using scenes for budget calculation');
+            return calculateBudgetFromScenes(scriptData.scenes);
+          } else {
+            console.log('⚠️ getBudgetBreakdown - No cost breakdown or scenes found in script data');
+          }
+        } else {
+          console.log('⚠️ getBudgetBreakdown - Script data is null');
+        }
+      }
+
+      // Handle regular projects
+      if (project.scriptBreakdown?.budget) {
+        console.log('🔍 getBudgetBreakdown - Using demo budget for regular project');
+        return transformDemoBudget(project.scriptBreakdown.budget);
+      }
+
+      // Final fallback
+      console.log('⚠️ getBudgetBreakdown - Using fallback budget (all zeros)');
+      return {
+        talent: 0,
+        location: 0,
+        propsSet: 0,
+        wardrobeMakeup: 0,
+        sfxVfx: 0,
+        crew: 0,
+        miscellaneous: 0,
+        total: 0
+      };
+
+    } catch (err) {
+      console.error('❌ getBudgetBreakdown error:', err);
+      error.value = err instanceof Error ? err.message : 'Failed to get budget breakdown';
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const updateBudgetCategory = async (projectId: string, category: string, amount: number): Promise<boolean> => {
+    try {
+      isLoading.value = true;
+      
+      // Find the project
+      const project = projects.value.find(p => p.id === projectId);
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      // For API scripts, we would need to update via API
+      if (project.type === 'api-script' && project.script_id) {
+        // TODO: Implement API budget update
+        console.log('API budget update not yet implemented');
+        return false;
+      }
+
+      // For demo projects, update locally
+      if (project.scriptBreakdown?.budget) {
+        project.scriptBreakdown.budget[category] = formatBudgetAmount(amount);
+        return true;
+      }
+
+      return false;
+
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to update budget';
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Enhanced chatWithScript function
+  const chatWithScript = async (scriptId: string, message: string): Promise<string | null> => {
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      console.log('📡 chatWithScript - Calling API for script:', scriptId);
+      console.log('📡 chatWithScript - Message:', message);
+      
+      const result = await apiCall(`/chat/${scriptId}`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      });
+      
+      console.log('📡 chatWithScript - API result:', result);
+      
+      if (result && result.success && result.response) {
+        console.log('✅ chatWithScript - Success:', result.response.substring(0, 100) + '...');
+        return result.response;
+      } else {
+        console.error('❌ chatWithScript - Invalid response format:', result);
+        error.value = 'Invalid response from chat service';
+        return null;
+      }
+    } catch (err) {
+      console.error('❌ chatWithScript - Error:', err);
+      error.value = err instanceof Error ? err.message : 'Chat failed';
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Initialize auth and project state from localStorage
+  initializeAuth();
+  initializeSelectedProject();
 
   return {
     // State
@@ -1256,6 +1841,21 @@ export const useProjectStore = defineStore('project', () => {
     refreshCurrentScript,
     loadMore,
     
+    // Data Transformation
+    transformAPIScene,
+    transformDemoScene,
+    standardizeSceneData,
+    getScriptAnalysisData,
+    
+    // Budget Functions
+    parseBudgetAmount,
+    formatBudgetAmount,
+    transformDemoBudget,
+    transformAPIBudget,
+    calculateBudgetFromScenes,
+    getBudgetBreakdown,
+    updateBudgetCategory,
+    
     // Combined Actions
     analyzeAndSave,
     deleteMultipleScripts,
@@ -1269,6 +1869,8 @@ export const useProjectStore = defineStore('project', () => {
     deleteProject,
     setCurrentProject,
     getProjectAnalysis,
+    chatWithScript,
+
     
     // Authentication Actions
     login,

@@ -5,7 +5,7 @@
       <div class="flex items-center justify-between mb-4">
         <div>
           <h2 class="text-white text-lg font-inter-bold mb-1">Elements Breakdown</h2>
-          <p class="text-text-muted text-sm font-inter-regular">
+          <p class="text-text-secondary text-sm font-inter-regular">
             <template v-if="selectedSceneNumber">
               Scene Number: {{ selectedSceneNumber }} {{ selectedScene?.heading }}
             </template>

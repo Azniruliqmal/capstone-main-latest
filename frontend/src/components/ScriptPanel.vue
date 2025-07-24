@@ -2,45 +2,10 @@
   <div class="w-1/2 bg-background-secondary border-r border-gray-700 flex flex-col h-full">
     <!-- Script Header - Sticky -->
     <div class="flex-shrink-0 p-6 border-b border-gray-700 bg-background-secondary sticky top-0 z-10">
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center justify-between gap-4 mb-6">
         <div>
-          <h2 class="text-white text-lg font-inter-bold">Script Analysis</h2>
+          <h2 class="text-white text-lg font-inter-bold">Scripts:</h2>
         </div>
-        <div class="flex gap-3">
-          <!-- Jump to Scene Dropdown -->
-          <div class="relative">
-            <select
-              v-model="jumpToScene"
-              @change="handleJumpToScene"
-              class="bg-secondary text-black px-4 py-2 rounded-lg font-inter-semibold text-sm hover:bg-secondary-hover transition-colors appearance-none pr-8 cursor-pointer min-w-[180px]"
-            >
-              <option value="">Jump to Scene</option>
-              <option v-for="scene in scenes" :key="scene.number" :value="scene.number">
-                Scene {{ scene.number }} - {{ scene.heading }}
-              </option>
-            </select>
-            <svg class="absolute right-2 top-3 w-3 h-3 text-black pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
-            </svg>
-          </div>
-          
-          <!-- Export Button -->
-          <button 
-            @click="$emit('export-scenes')"
-            class="text-text-secondary hover:text-white transition-colors bg-background-tertiary px-4 py-2 rounded-lg border border-gray-600 hover:border-secondary flex items-center gap-2"
-            title="Export scene breakdown"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-            </svg>
-            <span class="text-sm font-inter-medium">Export</span>
-          </button>
-        </div>
-      </div>
-      
-      <!-- Project Selector -->
-      <div class="flex items-center gap-4 mb-5">
-        <label class="text-white font-inter-medium text-sm min-w-[45px]">Script:</label>
         <select
           v-model="selectedProjectLocal"
           class="bg-background-tertiary text-secondary font-inter-semibold rounded-lg px-4 py-2 focus:outline-none border border-gray-600 focus:border-secondary transition-colors flex-1"
@@ -71,16 +36,42 @@
         
         <!-- Status Indicators -->
         <div class="flex gap-3 items-center">
+          <!--span
+            v-if="selectedProject?.type === 'api-script'"
+            class="text-xs font-inter-bold px-3 py-1 rounded whitespace-nowrap bg-blue-500 text-white"
+          >
+            API Script
+          </span>
           <span
             v-if="selectedProject"
             :class="['text-xs font-inter-bold px-3 py-1 rounded whitespace-nowrap', getStatusColor(selectedProject.status)]"
           >
             {{ selectedProject.status }}
-          </span>
+          </span -->
         </div>
       </div>
-      <!-- Scene Statistics -->
-      <div class="flex items-center text-xs text-text-muted bg-background-tertiary rounded-lg px-4 py-3">
+      
+      <!-- Project Selector -->
+      <div class="flex items-center gap-2 mb-5">
+        <label class="text-white font-inter-medium text-sm min-w-[45px]">Jump to Scene:</label>
+                  <!-- Jump to Scene Dropdown -->
+        <div class="flex gap-2 items-center">
+          <div class="relative ">
+            <select
+              v-model="jumpToScene"
+              @change="handleJumpToScene"
+              class="bg-secondary text-black px-2 py-2 rounded-lg font-inter-semibold text-sm hover:bg-secondary-hover transition-colors appearance-none pr-8 cursor-pointer min-w-[180px]"
+            >
+              <option value="">Jump to Scene</option>
+              <option v-for="scene in scenes" :key="scene.number" :value="scene.number">
+                Scene {{ scene.number }} - {{ scene.heading }}
+              </option>
+            </select>
+            <svg class="absolute right-2 top-3 w-3 h-3 text-black pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+          </div>
+                <div class="flex items-center text-xs text-text-muted bg-background-tertiary rounded-lg px-4 py-3">
         <div class="flex gap-6">
           <span class="flex items-center gap-2">
             <div class="w-2 h-2 bg-secondary rounded-full"></div>
@@ -96,6 +87,20 @@
           </span>
         </div>
       </div>
+          
+          <!-- Export Button -->
+          <!-- button 
+            @click="$emit('export-scenes')"
+            class="text-text-secondary hover:text-white transition-colors bg-background-tertiary px-4 py-2 rounded-lg border border-gray-600 hover:border-secondary flex items-center gap-2"
+            title="Export scene breakdown"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <span class="text-sm font-inter-medium">Export</span>
+          </button -->
+        </div>
+      </div>
     </div>
 
     <!-- Scenes List - Scrollable -->
@@ -103,6 +108,7 @@
       <div
         v-for="scene in filteredScenes"
         :key="scene.number"
+        :data-scene-number="scene.number"
         :class="[
           'mb-4 rounded-lg bg-background-tertiary p-5 cursor-pointer transition-all duration-200 border-2',
           selectedSceneNumber === scene.number
@@ -127,7 +133,7 @@
         </div>
         
         <!-- Scene Description -->
-        <div class="text-text-muted text-sm mb-3 font-inter-regular">{{ scene.notes }}</div>
+        <div class="text-text-secondary text-sm mb-3 font-inter-regular">{{ scene.notes }}</div>
         
         <!-- Scene Dialogue -->
         <div v-if="scene.dialogues && scene.dialogues.length" class="mb-3">

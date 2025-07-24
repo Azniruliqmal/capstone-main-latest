@@ -21,7 +21,8 @@ module.exports = {
         // Font colors
         text: {
           primary: '#FFFFFF',   // White text
-          secondary: '#9CA3AF', // Gray text
+          secondary: '#DFDFDF', // Gray text
+          tertiary: '#D1D5DB',  // Lighter gray text
           muted: '#6B7280',     // Muted gray text
         },
         // Button colors
@@ -55,6 +56,7 @@ module.exports = {
         white: "#FFFFFF",
         darkgray: "#9CA3AF",
         goldenrod: "#D4AF37",
+        platinum: "#DFDFDF",
         lightgray: "#D1D5DB",
         gainsboro: "#E5E7EB",
         dimgray: "#4B5563",

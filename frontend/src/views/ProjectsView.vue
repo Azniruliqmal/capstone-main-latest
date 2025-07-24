@@ -2,7 +2,7 @@
   <div class="transition-all duration-300" :class="sidebarExpanded ? 'ml-64' : 'ml-16'">
     <!-- Header Section Start -->
     <div
-      class="w-full relative bg-background-primary h-20 flex flex-row items-center justify-between py-[15px] pl-[19px] pr-[104px] box-border gap-0 text-left text-2xl text-white font-inter z-30 border-b border-gray-700"
+      class="w-full relative bg-background-primary h-20 flex flex-row items-center justify-between py-[15px] pl-[19px] pr-[20px] box-border gap-0 text-left text-2xl text-white font-inter z-30 border-b border-gray-700"
       style="position: sticky; top: 0;"
     >
       <div class="flex flex-col items-start justify-start">
@@ -71,11 +71,11 @@
         <div class="text-text-muted font-inter-regular text-sm mb-4 space-y-1">
           <div class="flex justify-between items-center">
             <span>Budget:</span> 
-            <span class="text-white font-inter-semibold">RM {{ project.budget_total || 'N/A' }}</span>
+            <span class="text-white font-inter-semibold">{{ formatBudget(project.budget_total) }}</span>
           </div>
           <div class="flex justify-between items-center">
             <span>Scenes:</span> 
-            <span class="text-white font-inter-semibold">{{ project.scripts_count || 0 }}</span>
+            <span class="text-white font-inter-semibold">{{ formatScenes(project) }}</span>
           </div>
           <div class="flex justify-between items-center">
             <span>Created:</span> 
@@ -88,10 +88,10 @@
           <button
             class="flex-1 rounded-md bg-gray-700 h-9 flex items-center justify-center text-sm text-text-secondary cursor-pointer transition hover:bg-gray-600 font-inter-medium disabled:opacity-50 disabled:cursor-not-allowed"
             @click="onViewButtonContainerClick(project)"
-            :disabled="loadingProjectId === project.title"
+            :disabled="loadingProjectId === project.id"
             type="button"
           >
-            <div v-if="loadingProjectId === project.title" class="flex items-center gap-2">
+            <div v-if="loadingProjectId === project.id" class="flex items-center gap-2">
               <svg class="animate-spin h-4 w-4 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -190,7 +190,7 @@
           </div>
         </div>
       </div>
-      <!-- Create New Project Card -->
+
       <div
         class="border-2 border-secondary rounded-xl p-6 shadow-lg flex flex-col items-center justify-center gap-4 bg-background-secondary min-h-[220px] cursor-pointer transition hover:shadow-xl hover:border-secondary-hover"
         @click="goToNewProject"
@@ -202,7 +202,7 @@
         </div>
         <h2 class="text-lg font-inter-bold text-white text-center">Create New Project</h2>
         <p class="text-text-muted text-center font-inter-regular text-sm leading-snug">Start a new film project<br />with AI-powered script analysis</p>
-      </div>
+      </div> 
     </div>
 
     <!-- Edit Project Modal -->
@@ -282,7 +282,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectStore } from '../stores/projectStore'
 
@@ -319,6 +319,16 @@ onMounted(async () => {
   if (projectStore.isLoggedIn) {
     await projectStore.fetchProjects()
   }
+  // Always fetch the latest scripts data to ensure freshness
+  await projectStore.fetchScripts()
+})
+
+// Add a watcher to refresh data when coming back to this page
+watch(() => router.currentRoute.value.path, async (newPath) => {
+  if (newPath === '/projects') {
+    // Refresh scripts data when returning to projects page
+    await projectStore.fetchScripts()
+  }
 })
 
 // Helper functions
@@ -341,8 +351,88 @@ const formatDate = (dateString: string): string => {
   }
 }
 
+const formatBudget = (budget: number | undefined): string => {
+  if (!budget || budget === 0) return 'N/A'
+  if (budget >= 1000000) {
+    return `RM ${(budget / 1000000).toFixed(1)}M`
+  } else if (budget >= 1000) {
+    return `RM ${(budget / 1000).toFixed(1)}K`
+  } else {
+    return `RM ${budget.toLocaleString()}`
+  }
+}
+
+const formatScenes = (project: any): string => {
+  // Try multiple sources for scene count
+  if (project.scriptBreakdown?.scenes?.length) {
+    return `${project.scriptBreakdown.scenes.length}`
+  } else if (project.scripts_count) {
+    return `${project.scripts_count}`
+  } else if (project.type === 'api-script' && project.script_id) {
+    // For API scripts, try to get from the detailed script data
+    const script = projectStore.scripts.find(s => s.id === project.script_id)
+    return script?.total_scenes ? `${script.total_scenes}` : '0'
+  }
+  return '0'
+}
+
 const filteredProjects = computed(() => {
-  let filtered = projectStore.projects
+  // Use projects from the store (includes both demo projects and uploaded scripts)
+  let allProjects = [...projectStore.projects]
+  
+  // Update existing API script projects with latest data from scripts
+  allProjects = allProjects.map(project => {
+    if (project.type === 'api-script' && project.script_id) {
+      const script = projectStore.scripts.find(s => s.id === project.script_id)
+      if (script) {
+        // Update the project with latest script data
+        return {
+          ...project,
+          budget_total: script.estimated_budget || project.budget_total || 0,
+          scripts_count: script.total_scenes || project.scripts_count || 0,
+          status: script.status === 'completed' ? 'COMPLETED' : script.status === 'pending_review' ? 'REVIEW' : (project.status || 'ACTIVE'),
+          scriptBreakdown: script.script_data ? {
+            scenes: script.script_data.scenes || [],
+            budget: script.cost_breakdown || {},
+            characters: script.cast_breakdown || {},
+            locations: script.location_breakdown || {},
+            props: script.props_breakdown || {}
+          } : project.scriptBreakdown
+        }
+      }
+    }
+    return project
+  })
+  
+  // Only add scripts that haven't been converted to projects yet
+  let orphanedScripts = projectStore.scripts.filter(script => {
+    // Check if this script already has a corresponding project
+    return !allProjects.some(project => project.script_id === script.id)
+  }).map(script => ({
+    id: `api-${script.id}`,
+    script_id: script.id,
+    title: script.filename,
+    description: script.description || `Analyzed script: ${script.filename}`,
+    status: script.status === 'completed' ? 'COMPLETED' : script.status === 'pending_review' ? 'REVIEW' : 'ACTIVE',
+    created_at: script.created_at,
+    script_filename: script.filename,
+    type: 'api-script',
+    // Map budget and scenes information from API script data
+    budget_total: script.estimated_budget || 0,
+    estimated_duration_days: script.estimated_duration_days || 0,
+    scripts_count: script.total_scenes || 0,
+    // Add scriptBreakdown if available
+    scriptBreakdown: script.script_data ? {
+      scenes: script.script_data.scenes || [],
+      budget: script.cost_breakdown || {},
+      characters: script.cast_breakdown || {},
+      locations: script.location_breakdown || {},
+      props: script.props_breakdown || {}
+    } : undefined
+  }))
+  
+  let filtered = [...allProjects, ...orphanedScripts]
+  
   if (activeTab.value === 'Active') filtered = filtered.filter(p => p.status === 'ACTIVE')
   else if (activeTab.value === 'In Review') filtered = filtered.filter(p => p.status === 'REVIEW')
   else if (activeTab.value === 'Completed') filtered = filtered.filter(p => p.status === 'COMPLETED')
@@ -389,9 +479,9 @@ function toggleStatusSubmenu(index: number) {
   openStatusSubmenu.value = openStatusSubmenu.value === index ? -1 : index
 }
 
-async function changeProjectStatus(project: any, statusOption: any) {
+function changeProjectStatus(project: any, statusOption: any) {
   try {
-    console.log('🔄 Attempting to change project status:', {
+    console.log('🔄 Attempting to change project status (frontend only):', {
       projectId: project.id,
       projectTitle: project.title,
       currentStatus: project.status,
@@ -399,8 +489,8 @@ async function changeProjectStatus(project: any, statusOption: any) {
       newLabel: statusOption.label
     });
     
-    // Update in the store first (this will update the backend and reactive state)
-    const success = await projectStore.updateProjectStatus(project.id, statusOption.value, statusOption.color)
+    // Update in the store (frontend memory only - no API calls)
+    const success = projectStore.updateProjectStatus(project.id, statusOption.value, statusOption.color)
     
     console.log('📡 Update result:', success);
     
@@ -409,7 +499,7 @@ async function changeProjectStatus(project: any, statusOption: any) {
       openMenuIndex.value = -1
       openStatusSubmenu.value = -1
       
-      console.log('✅ Project status updated successfully');
+      console.log('✅ Project status updated successfully (frontend only)');
       
       // Show success notification
       showNotification(`Project status updated to ${statusOption.label}`, 'success')
@@ -424,26 +514,55 @@ async function changeProjectStatus(project: any, statusOption: any) {
   }
 }
 
-function onViewButtonContainerClick(project: any) {
+async function onViewButtonContainerClick(project: any) {
   // Set loading state
   loadingProjectId.value = project.id
   
-  // Set the selected project in the store
-  projectStore.setSelectedProject(project.id)
-  
-  // Show loading notification
-  showNotification(`Loading "${project.title}" analysis...`, 'info')
-  
-  // Small delay for better UX
-  setTimeout(() => {
-    // Navigate to Script Analysis page
-    router.push({ name: 'ScriptBreakdown' })
+  try {
+    console.log('Loading project details for:', project.title, 'Type:', project.type)
     
-    console.log('Navigating to Script Analysis for project:', project.title)
+    // Handle API scripts - fetch detailed analysis from backend_zarul
+    if (project.type === 'api-script' && project.script_id) {
+      showNotification(`Loading script analysis for "${project.title}"...`, 'info')
+      
+      // Fetch detailed script analysis from backend_zarul database
+      await projectStore.getScriptAnalysisData(project.script_id)
+      
+      console.log('Successfully loaded API script analysis for:', project.title)
+      showNotification(`Loaded analysis for "${project.title}"`, 'success')
+    } else {
+      // Handle regular projects - fetch project data
+      showNotification(`Loading project "${project.title}"...`, 'info')
+      
+      // For regular projects, try to fetch additional project analysis
+      try {
+        await projectStore.getProjectAnalysis(project.id)
+        console.log('Loaded additional project analysis for:', project.title)
+      } catch (error) {
+        console.log('No additional analysis available for project:', project.title)
+      }
+      
+      showNotification(`Loaded project "${project.title}"`, 'success')
+    }
     
+    // Set the selected project in the store
+    projectStore.setSelectedProject(project.id)
+    
+    // Navigate to breakdown page with project ID
+    router.push({ 
+      path: '/breakdown',
+      query: { projectId: project.id }
+    })
+    
+    console.log('Navigating to breakdown page for project:', project.title, 'ID:', project.id)
+    
+  } catch (error: any) {
+    console.error('Error loading project details:', error)
+    showNotification(`Failed to load "${project.title}": ${error.message || 'Unknown error'}`, 'error')
+  } finally {
     // Reset loading state
     loadingProjectId.value = ''
-  }, 500)
+  }
 }
 
 function showNotification(message: string, type: 'success' | 'error' | 'info' = 'success') {
@@ -556,11 +675,16 @@ function exportProject(project: any, index: number) {
   linkElement.click()
 }
 
-function deleteProject(project: any, index: number) {
+async function deleteProject(project: any, index: number) {
   console.log('Deleting project:', project.title)
   openMenuIndex.value = -1
   // Implement delete functionality with confirmation
   if (confirm(`Are you sure you want to delete "${project.title}"? This action cannot be undone.`)) {
+    // Use deleteScript function for API scripts
+    if (project.script_id) {
+      await projectStore.deleteScript(project.script_id)
+    }
+    // Also remove from local store
     projectStore.removeProject(project.id)
   }
 }

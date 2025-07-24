@@ -3,7 +3,7 @@ import os
 from langchain_mongodb import MongoDBAtlasVectorSearch
 from pymongo import MongoClient
 from langchain_google_genai.embeddings import GoogleGenerativeAIEmbeddings
-from langchain_community.document_loaders import PyPDFLoader
+from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 
@@ -18,9 +18,8 @@ embeddings = GoogleGenerativeAIEmbeddings(
 
 client = MongoClient(os.getenv("MONGODB_ATLAS_CLUSTER_URI"))
 
-# Use environment variables for consistency
-DB_NAME = os.getenv("MONGODB_DB_NAME", "scenesplit_ai")
-COLLECTION_NAME = os.getenv("MONGODB_COLLECTION_NAME", "cost_collection_pdf")
+DB_NAME = "test_db"
+COLLECTION_NAME = "cost_collection_pdf"
 ATLAS_VECTOR_SEARCH_INDEX_NAME = "cost-index-pdf"
 
 MONGODB_COLLECTION = client[DB_NAME][COLLECTION_NAME]

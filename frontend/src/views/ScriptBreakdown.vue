@@ -2,7 +2,7 @@
   <div class="transition-all duration-300" :class="sidebarExpanded ? 'ml-64' : 'ml-16'">
     <!-- Header Section Start -->
     <div
-      class="w-full relative bg-background-primary h-20 flex flex-row items-center justify-between py-[15px] pl-[19px] pr-[104px] box-border gap-0 text-left text-2xl text-white font-inter z-30 border-b border-gray-700"
+      class="w-full relative bg-background-primary h-20 flex flex-row items-center justify-between py-[15px] pl-[19px] pr-[20px] box-border gap-0 text-left text-2xl text-white font-inter z-30 border-b border-gray-700"
       style="position: sticky; top: 0;"
     >
       <div class="flex flex-col items-start justify-start">
@@ -76,9 +76,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, inject, onMounted } from 'vue'
+import { ref, computed, watch, inject, onMounted, nextTick } from 'vue'
 import { useProjectStore } from '../stores/projectStore'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import ScriptPanel from '../components/ScriptPanel.vue'
 import ElementsPanel from '../components/ElementsPanel.vue'
 import AIChatPanel from '../components/AIChatPanel.vue'
@@ -87,11 +87,13 @@ import AIChatPanel from '../components/AIChatPanel.vue'
 const sidebarExpanded = inject('sidebarExpanded', ref(false))
 
 const router = useRouter()
+const route = useRoute()
 const projectStore = useProjectStore()
 
 // Reactive state
 const searchQuery = ref('')
-const selectedProjectId = ref(projectStore.selectedProjectId || projectStore.projects[0]?.id || '')
+// Initialize selectedProjectId from URL query params first, then fallback to store
+const selectedProjectId = ref(route.query.projectId as string || projectStore.selectedProjectId || projectStore.projects[0]?.id || '')
 const selectedSceneNumber = ref<number | null>(null)
 const activeTab = ref('All')
 const showAI = ref(false)
@@ -102,7 +104,25 @@ const loading = ref(false)
 const elementTabs = ['All', 'Cast', 'Props', 'Locations']
 
 // Computed properties
-const projects = computed(() => projectStore.projects)
+const projects = computed(() => {
+  // Combine regular projects and API scripts
+  const regularProjects = projectStore.projects
+  const apiScripts = projectStore.scripts.map(script => ({
+    id: `api-${script.id}`,
+    script_id: script.id,
+    title: script.title || script.filename,
+    description: script.description || `Analyzed script: ${script.filename}`,
+    status: script.status === 'completed' ? 'COMPLETED' : 'ACTIVE',
+    created_at: script.created_at,
+    script_filename: script.filename,
+    type: 'api-script',
+    budget_total: script.estimated_budget || 0,
+    estimated_duration_days: script.estimated_duration_days || 0,
+    scripts_count: script.total_scenes || 0
+  }))
+  
+  return [...regularProjects, ...apiScripts]
+})
 
 const selectedProject = computed(() => {
   console.log('=== COMPUTING SELECTED PROJECT ===')
@@ -132,33 +152,18 @@ const scenes = computed(() => {
   console.log('selectedProject title:', selectedProject.value?.title)
   console.log('analysisData available:', !!analysisData.value)
   
-  // First check if we have analysis data from API (for backend-analyzed projects)
+  // First check if we have analysis data from API (already standardized)
   if (analysisData.value?.comprehensive_analysis?.script_data?.scenes) {
     console.log('Using API analysis data, scenes count:', analysisData.value.comprehensive_analysis.script_data.scenes.length)
-    // Transform backend structure to frontend structure
-    const transformedScenes = analysisData.value.comprehensive_analysis.script_data.scenes.map(scene => ({
-      number: scene.scene_number,
-      heading: scene.scene_header,
-      location: scene.location,
-      time: scene.time_of_day,
-      characters: scene.characters_present || [],
-      props: scene.props_mentioned || [],
-      wardrobe: [],
-      sfx: [],
-      notes: scene.action_lines ? scene.action_lines.join(' ') : '',
-      budget: 'TBD',
-      dialogues: scene.dialogue_lines || [],
-      estimatedDuration: 'TBD'
-    }))
-    console.log('Transformed scenes:', transformedScenes.length)
-    return transformedScenes
+    return analysisData.value.comprehensive_analysis.script_data.scenes
   }
   
-  // Fallback to demo/project data (scriptBreakdown from API or frontend store)
+  // Fallback to demo/project data (standardize it)
   if (selectedProject.value?.scriptBreakdown?.scenes) {
     console.log('Using project scriptBreakdown data, scenes count:', selectedProject.value.scriptBreakdown.scenes.length)
     console.log('First scene:', selectedProject.value.scriptBreakdown.scenes[0]?.heading)
-    return selectedProject.value.scriptBreakdown.scenes
+    // Standardize demo data to unified format
+    return projectStore.standardizeSceneData(selectedProject.value.scriptBreakdown.scenes, false)
   }
   
   console.log('No scenes found for project:', selectedProject.value?.title)
@@ -199,7 +204,7 @@ const filteredElements = computed(() => {
       (scene.characters || []).map(name => ({
         type: 'Cast',
         name,
-        description: getCharacterDescription(name),
+        description: getCharacterDescription(name, scene.number),
         count: 1
       }))
     )
@@ -234,8 +239,86 @@ const filteredElements = computed(() => {
 })
 
 // Helper functions
-function getCharacterDescription(characterName: string): string {
-  // Character descriptions for demo projects
+function getCharacterDescription(characterName: string, sceneNumber?: number): string {
+  // Extract base character name (remove age indicators like "(20)")
+  const baseCharName = characterName.replace(/\([^)]*\)/g, '').trim();
+  
+  console.log(`🎭 Getting character description for: "${characterName}" (base: "${baseCharName}") in scene ${sceneNumber}`)
+  
+  // First, try to get description from API analysis data
+  if (analysisData.value?.comprehensive_analysis?.cast_breakdown) {
+    const castBreakdown = analysisData.value.comprehensive_analysis.cast_breakdown
+    console.log('🎭 Cast breakdown available, checking casting requirements...')
+    
+    // Check casting_requirements for character descriptions
+    if (castBreakdown.casting_requirements) {
+      const castingReq = castBreakdown.casting_requirements.find((req: string) => {
+        const reqCharName = req.split(':')[0].trim();
+        return reqCharName.toLowerCase().includes(baseCharName.toLowerCase()) ||
+               baseCharName.toLowerCase().includes(reqCharName.toLowerCase());
+      });
+      
+      if (castingReq) {
+        // Extract description part after the colon
+        const descMatch = castingReq.match(/:\s*(.+)$/);
+        if (descMatch) {
+          const description = descMatch[1].trim();
+          console.log(`🎭 Found casting requirement description: "${description}"`);
+          return description;
+        }
+      }
+    }
+    
+    // Check main_characters and supporting_characters for descriptions
+    const allCharacters = [
+      ...(castBreakdown.main_characters || []),
+      ...(castBreakdown.supporting_characters || [])
+    ]
+    
+    const characterInfo = allCharacters.find((char: string) => {
+      const charName = char.split(':')[0].trim();
+      return charName.toLowerCase().includes(baseCharName.toLowerCase()) ||
+             baseCharName.toLowerCase().includes(charName.toLowerCase());
+    });
+    
+    if (characterInfo) {
+      // Extract description part after the colon
+      const descMatch = characterInfo.match(/:\s*(.+)$/);
+      if (descMatch) {
+        const description = descMatch[1].trim();
+        console.log(`🎭 Found character info description: "${description}"`);
+        return description;
+      }
+    }
+    
+    // Check scene-specific character interactions if scene number is provided
+    if (sceneNumber && castBreakdown.scene_characters) {
+      const sceneCharData = castBreakdown.scene_characters.find((sc: any) => 
+        sc.scene_number === sceneNumber
+      )
+      
+      if (sceneCharData) {
+        // Check if this character is in the scene's character list
+        const isCharacterInScene = sceneCharData.characters_in_scene?.some((char: string) => {
+          const sceneCharName = char.replace(/\([^)]*\)/g, '').trim();
+          return sceneCharName.toLowerCase() === baseCharName.toLowerCase();
+        });
+        
+        if (isCharacterInScene && sceneCharData.character_interactions) {
+          // Return the first relevant interaction for this scene
+          const interactions = sceneCharData.character_interactions;
+          if (interactions.length > 0) {
+            // Join multiple interactions with commas if there are several
+            const description = interactions.join(', ');
+            console.log(`🎭 Found scene interaction description: "${description}"`);
+            return description;
+          }
+        }
+      }
+    }
+  }
+  
+  // Fallback to demo project descriptions for static demo data
   const characterDescriptions: Record<string, string> = {
     // The Last Guardian
     'LYRA': 'Young warrior chosen to be the guardian',
@@ -271,11 +354,52 @@ function getCharacterDescription(characterName: string): string {
     'MIDWIFE': 'Skilled healthcare professional',
     'HUSBAND': 'Supportive partner'
   }
-  return characterDescriptions[characterName] || 'Character in the scene'
+  
+  const fallbackDescription = characterDescriptions[characterName] || 'Character in the scene';
+  console.log(`🎭 Using fallback description: "${fallbackDescription}"`);
+  return fallbackDescription;
 }
 
 function selectScene(sceneNumber: number) {
   selectedSceneNumber.value = sceneNumber
+  
+  // Auto-scroll to the selected scene
+  nextTick(() => {
+    scrollToScene(sceneNumber)
+  })
+}
+
+function scrollToScene(sceneNumber: number) {
+  // Find the scene element by its scene number
+  const sceneElements = document.querySelectorAll('[data-scene-number]')
+  const targetElement = Array.from(sceneElements).find(
+    el => el.getAttribute('data-scene-number') === sceneNumber.toString()
+  ) as HTMLElement
+  
+  if (targetElement) {
+    // Get the scrollable container (scenes list)
+    const scrollContainer = targetElement.closest('.overflow-y-auto') as HTMLElement
+    
+    if (scrollContainer) {
+      // Calculate the position to scroll to
+      const containerRect = scrollContainer.getBoundingClientRect()
+      const targetRect = targetElement.getBoundingClientRect()
+      const scrollTop = scrollContainer.scrollTop
+      
+      // Calculate offset to center the scene in the viewport
+      const targetScrollTop = scrollTop + targetRect.top - containerRect.top - (containerRect.height / 2) + (targetRect.height / 2)
+      
+      // Smooth scroll to the target scene
+      scrollContainer.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: 'smooth'
+      })
+      
+      console.log(`📍 Auto-scrolled to Scene ${sceneNumber}`)
+    }
+  } else {
+    console.warn(`⚠️ Scene ${sceneNumber} element not found for scrolling`)
+  }
 }
 
 function onProjectChange(projectTitle: string) {
@@ -310,22 +434,55 @@ async function loadAnalysisData() {
   if (!selectedProjectId.value) return
   
   loading.value = true
-  // Always clear analysis data first
   analysisData.value = null
   
   try {
-    // Try to get analysis data from API first (for backend-analyzed projects)
+    const project = selectedProject.value
+    console.log('Loading analysis data for project:', project?.title, 'Type:', project?.type)
+    
+    // Check if this is an API script (from analyzed scripts)
+    if (project?.type === 'api-script' && project?.script_id) {
+      console.log('Loading API script analysis data for script ID:', project.script_id)
+      const scriptAnalysisData = await projectStore.getScriptAnalysisData(project.script_id)
+      
+      if (scriptAnalysisData?.scenes) {
+        console.log('Successfully loaded API script data, scenes:', scriptAnalysisData.scenes.length)
+        analysisData.value = {
+          comprehensive_analysis: {
+            script_data: {
+              scenes: scriptAnalysisData.scenes
+            },
+            cast_breakdown: scriptAnalysisData.cast_breakdown,
+            cost_breakdown: scriptAnalysisData.cost_breakdown,
+            location_breakdown: scriptAnalysisData.location_breakdown,
+            props_breakdown: scriptAnalysisData.props_breakdown
+          }
+        }
+        return
+      }
+    }
+    
+    // Try to get analysis data from projects API (for regular projects)
     const data = await projectStore.getProjectAnalysis(selectedProjectId.value)
     if (data && data.comprehensive_analysis && data.comprehensive_analysis.script_data && data.comprehensive_analysis.script_data.scenes) {
-      console.log('Using API analysis data for project:', selectedProjectId.value)
-      analysisData.value = data
+      console.log('Using project API analysis data for project:', selectedProjectId.value)
+      // Standardize the scene data
+      const scenes = projectStore.standardizeSceneData(data.comprehensive_analysis.script_data.scenes, true)
+      analysisData.value = {
+        comprehensive_analysis: {
+          script_data: { scenes },
+          cast_breakdown: data.comprehensive_analysis.cast_breakdown,
+          cost_breakdown: data.comprehensive_analysis.cost_breakdown,
+          location_breakdown: data.comprehensive_analysis.location_breakdown,
+          props_breakdown: data.comprehensive_analysis.props_breakdown
+        }
+      }
     } else {
-      console.log('API analysis not available or incomplete, using project scriptBreakdown data')
+      console.log('No API analysis available, will fall back to demo/project data')
       analysisData.value = null
     }
   } catch (error) {
-    console.log('API analysis not available, using project scriptBreakdown data')
-    // Clear analysis data to fall back to demo data
+    console.log('Error loading analysis data:', error)
     analysisData.value = null
   } finally {
     loading.value = false
@@ -467,16 +624,35 @@ watch(scenes, (newScenes, oldScenes) => {
   console.log('=== SCENES WATCHER END ===')
 }, { immediate: true })
 
+// Watch for URL query parameter changes
+watch(() => route.query.projectId, (newProjectId) => {
+  console.log('🔄 URL projectId changed to:', newProjectId)
+  if (newProjectId && newProjectId !== selectedProjectId.value) {
+    console.log('📝 Updating selectedProjectId from URL:', newProjectId)
+    selectedProjectId.value = newProjectId as string
+    selectedSceneNumber.value = null // Reset scene selection
+    projectStore.setSelectedProject(newProjectId as string)
+    loadAnalysisData()
+  }
+}, { immediate: true })
+
 // Load analysis data when component mounts
 onMounted(async () => {
-  // Ensure demo projects are loaded if no projects exist
-  if (projects.value.length === 0) {
-    await projectStore.fetchProjects()
-  }
+  console.log('ScriptBreakdown mounted')
+  console.log('🔄 Current selectedProjectId from store:', projectStore.selectedProjectId)
+  console.log('🔄 Current selectedProjectId from component:', selectedProjectId.value)
   
-  // Set default project if none selected
+  // Load both projects and scripts
+  await Promise.all([
+    projectStore.fetchProjects(),
+    projectStore.fetchScripts()
+  ])
+  
+  // If no project selected from URL or store, use first available project
   if (!selectedProjectId.value && projects.value.length > 0) {
     selectedProjectId.value = projects.value[0].id
+    projectStore.setSelectedProject(projects.value[0].id)
+    console.log('📌 Set default project:', projects.value[0].title)
   }
   
   if (selectedProjectId.value) {

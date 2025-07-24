@@ -1,128 +1,31 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc, func, text
 from sqlalchemy.exc import SQLAlchemyError
-from database.models import AnalyzedScript, Project, User
+from database.models import AnalyzedScript, User
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 import uuid
 import logging
-import hashlib
 
 logger = logging.getLogger(__name__)
-
-def ensure_users_table(db: Session):
-    """Ensure the users table exists with all required columns"""
-    try:
-        # Check if table exists by trying to query it
-        try:
-            db.execute(text("SELECT 1 FROM users LIMIT 1")).fetchone()
-            logger.info("users table exists")
-        except Exception:
-            logger.info("Creating users table...")
-            
-            # Create table with all columns if it doesn't exist
-            db.execute(text("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id VARCHAR PRIMARY KEY,
-                    email VARCHAR(255) UNIQUE NOT NULL,
-                    username VARCHAR(100) UNIQUE NOT NULL,
-                    full_name VARCHAR(255),
-                    hashed_password VARCHAR(255) NOT NULL,
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """))
-            
-            db.commit()
-            logger.info("users table created successfully")
-            
-            # Add indexes for better performance
-            db.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_users_email 
-                ON users(email);
-            """))
-            
-            db.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_users_username 
-                ON users(username);
-            """))
-            
-            db.commit()
-            logger.info("✅ users table created/fixed successfully")
-            
-    except Exception as e:
-        logger.error(f"❌ Error ensuring users table exists: {e}")
-        db.rollback()
-        raise
-
-def ensure_projects_table(db: Session):
-    """Ensure the projects table exists with all required columns"""
-    try:
-        # Check if table exists by trying to query it
-        try:
-            db.execute(text("SELECT 1 FROM projects LIMIT 1")).fetchone()
-            logger.info("projects table exists")
-        except Exception:
-            logger.info("Creating projects table...")
-            
-            # Create table with all columns if it doesn't exist
-            db.execute(text("""
-                CREATE TABLE IF NOT EXISTS projects (
-                    id VARCHAR PRIMARY KEY,
-                    title VARCHAR(255) NOT NULL,
-                    description TEXT,
-                    status VARCHAR(50) DEFAULT 'active',
-                    user_id VARCHAR,
-                    budget_total FLOAT,
-                    estimated_duration_days INTEGER,
-                    script_filename VARCHAR(255),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """))
-            
-            db.commit()
-            logger.info("projects table created successfully")
-            
-            # Add indexes for better performance
-            db.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_projects_title 
-                ON projects(title);
-            """))
-            
-            db.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_projects_status 
-                ON projects(status);
-            """))
-            
-            db.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_projects_created_at 
-                ON projects(created_at);
-            """))
-            
-            db.commit()
-            logger.info("✅ projects table created/fixed successfully")
-            
-    except Exception as e:
-        logger.error(f"❌ Error ensuring projects table exists: {e}")
-        db.rollback()
-        raise
 
 def ensure_analyzed_scripts_table(db: Session):
     """Ensure the analyzed_scripts table exists with all required columns"""
     try:
-        # Check if table exists by trying to query it
-        try:
-            db.execute(text("SELECT 1 FROM analyzed_scripts LIMIT 1")).fetchone()
-            logger.info("analyzed_scripts table exists")
-        except Exception:
-            logger.info("Creating analyzed_scripts table...")
+        # Check if table exists and has id column
+        result = db.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'analyzed_scripts' AND column_name = 'id'
+        """)).fetchone()
+        
+        if not result:
+            logger.info("Creating/fixing analyzed_scripts table...")
             
             # Create table with all columns if it doesn't exist
             db.execute(text("""
                 CREATE TABLE IF NOT EXISTS analyzed_scripts (
-                    id VARCHAR PRIMARY KEY,
+                    id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
                     filename VARCHAR(255) NOT NULL,
                     original_filename VARCHAR(255),
                     file_size_bytes INTEGER,
@@ -140,14 +43,10 @@ def ensure_analyzed_scripts_table(db: Session):
                     total_locations INTEGER,
                     estimated_budget FLOAT,
                     budget_category VARCHAR(20),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    project_id VARCHAR
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
             """))
-            
-            db.commit()
-            logger.info("analyzed_scripts table created successfully")
             
             # Add indexes for better performance
             db.execute(text("""
@@ -167,6 +66,8 @@ def ensure_analyzed_scripts_table(db: Session):
             
             db.commit()
             logger.info("✅ analyzed_scripts table created/fixed successfully")
+        else:
+            logger.debug("✅ analyzed_scripts table already exists with id column")
             
     except Exception as e:
         logger.error(f"❌ Error ensuring table exists: {e}")
@@ -183,8 +84,7 @@ class AnalyzedScriptService:
         file_size_bytes: int,
         analysis_data: Dict[str, Any],
         processing_time: Optional[float] = None,
-        api_calls_used: int = 2,
-        project_id: Optional[str] = None  # Added project_id parameter
+        api_calls_used: int = 2
     ) -> AnalyzedScript:
         """Create a new analyzed script record with automatic table creation"""
         
@@ -203,7 +103,6 @@ class AnalyzedScriptService:
                 filename=filename,
                 original_filename=original_filename,
                 file_size_bytes=file_size_bytes,
-                project_id=project_id,  # Added project_id
                 script_data=extracted_data.get('script_data'),
                 cast_breakdown=extracted_data.get('cast_breakdown'),
                 cost_breakdown=extracted_data.get('cost_breakdown'),
@@ -211,7 +110,7 @@ class AnalyzedScriptService:
                 props_breakdown=extracted_data.get('props_breakdown'),
                 processing_time_seconds=processing_time,
                 api_calls_used=api_calls_used,
-                status="completed",
+                status="pending_review",  # Set default status to pending_review instead of completed
                 total_scenes=metadata.get('total_scenes'),
                 total_characters=metadata.get('total_characters'),
                 total_locations=metadata.get('total_locations'),
@@ -415,7 +314,7 @@ class AnalyzedScriptService:
         search_term: str,
         skip: int = 0,
         limit: int = 100,
-        search_fields: Optional[List[str]] = None
+        search_fields: List[str] = None
     ) -> List[AnalyzedScript]:
         """Enhanced search scripts with multiple field support"""
         
@@ -468,6 +367,48 @@ class AnalyzedScriptService:
             return []
     
     @staticmethod
+    def update_analyzed_script(
+        db: Session,
+        script_id: str,
+        **kwargs
+    ) -> Optional[AnalyzedScript]:
+        """Update an analyzed script with the provided fields"""
+        
+        # Ensure table exists before querying
+        ensure_analyzed_scripts_table(db)
+        
+        try:
+            script = db.query(AnalyzedScript).filter(AnalyzedScript.id == script_id).first()
+            if not script:
+                logger.warning(f"Script not found for update: {script_id}")
+                return None
+            
+            # Update allowed fields
+            allowed_fields = ['status', 'filename', 'error_message']
+            updated = False
+            
+            for field, value in kwargs.items():
+                if field in allowed_fields and hasattr(script, field):
+                    setattr(script, field, value)
+                    updated = True
+                    logger.info(f"Updated {field} to {value} for script {script_id}")
+            
+            if updated:
+                # SQLAlchemy will automatically update the updated_at field
+                db.commit()
+                db.refresh(script)
+                logger.info(f"Successfully updated script: {script_id}")
+                return script
+            else:
+                logger.warning(f"No valid fields to update for script: {script_id}")
+                return script
+                
+        except SQLAlchemyError as e:
+            db.rollback()
+            logger.error(f"Database error updating script {script_id}: {str(e)}")
+            return None
+    
+    @staticmethod
     def get_scripts_statistics(db: Session) -> Dict[str, Any]:
         """Get database statistics"""
         
@@ -505,166 +446,171 @@ class AnalyzedScriptService:
         except SQLAlchemyError as e:
             logger.error(f"Database error in get_scripts_statistics: {str(e)}")
             return {}
-    
-    @staticmethod
-    def get_analyzed_scripts(
-        db: Session,
-        skip: int = 0,
-        limit: int = 100,
-        order_by: str = "created_at",
-        order_direction: str = "desc"
-    ) -> List[AnalyzedScript]:
-        """Get analyzed scripts with pagination (alias for get_all_analyzed_scripts)"""
-        return AnalyzedScriptService.get_all_analyzed_scripts(
-            db=db, skip=skip, limit=limit, order_by=order_by, order_direction=order_direction
-        )
-    
-    @staticmethod
-    def get_analyzed_scripts_count(db: Session) -> int:
-        """Get total count of analyzed scripts (alias for get_scripts_count)"""
-        return AnalyzedScriptService.get_scripts_count(db)
-    
+
+
 class UserService:
-    """Service class for user operations"""
+    """Service for user-related database operations"""
     
     @staticmethod
-    def create_user(db: Session, email: str, username: str, password: str, full_name: Optional[str] = None) -> User:
+    def create_user(
+        db: Session,
+        email: str,
+        username: str,
+        full_name: str = None,
+        oauth_provider: str = None,
+        oauth_id: str = None,
+        profile_picture_url: str = None,
+        is_verified: bool = False
+    ) -> Optional[User]:
         """Create a new user"""
         try:
-            # Hash password (simple hash for demo - use proper hashing in production)
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            
             user = User(
                 email=email,
                 username=username,
                 full_name=full_name,
-                hashed_password=hashed_password
+                oauth_provider=oauth_provider,
+                oauth_id=oauth_id,
+                profile_picture_url=profile_picture_url,
+                is_verified=is_verified
             )
+            
             db.add(user)
             db.commit()
             db.refresh(user)
-            logger.info(f"User created successfully: {user.email}")
+            
+            logger.info(f"Created user with ID: {user.id}")
             return user
+            
         except SQLAlchemyError as e:
-            logger.error(f"Failed to create user: {str(e)}")
             db.rollback()
-            raise
-    
-    @staticmethod
-    def get_user_by_email(db: Session, email: str) -> Optional[User]:
-        """Get user by email"""
-        return db.query(User).filter(User.email == email).first()
-    
-    @staticmethod
-    def get_user_by_username(db: Session, username: str) -> Optional[User]:
-        """Get user by username"""
-        return db.query(User).filter(User.username == username).first()
+            logger.error(f"Database error creating user: {str(e)}")
+            return None
     
     @staticmethod
     def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
         """Get user by ID"""
-        return db.query(User).filter(User.id == user_id).first()
-    
-    @staticmethod
-    def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
-        """Authenticate user with email and password"""
         try:
-            user = db.query(User).filter(User.email == email).first()
-            if user:
-                hashed_input = hashlib.sha256(password.encode()).hexdigest()
-                # Compare the stored hash with the input hash
-                stored_hash = str(user.hashed_password)  # Convert to string for comparison
-                if stored_hash == hashed_input:
-                    return user
-            return None
-        except Exception as e:
-            logger.error(f"Authentication error: {str(e)}")
-            return None
-
-class ProjectService:
-    """Service class for project operations"""
-    
-    @staticmethod
-    def create_project(db: Session, title: str, description: Optional[str] = None, user_id: Optional[str] = None) -> Project:
-        """Create a new project"""
-        # Ensure table exists before any operation
-        ensure_projects_table(db)
-        
-        try:
-            project = Project(
-                title=title,
-                description=description,
-                user_id=user_id
-            )
-            db.add(project)
-            db.commit()
-            db.refresh(project)
-            logger.info(f"Project created successfully: {project.title}")
-            return project
+            return db.query(User).filter(User.id == user_id).first()
         except SQLAlchemyError as e:
-            logger.error(f"Failed to create project: {str(e)}")
-            db.rollback()
-            raise
+            logger.error(f"Database error getting user by ID: {str(e)}")
+            return None
     
     @staticmethod
-    def get_projects(db: Session, user_id: Optional[str] = None, skip: int = 0, limit: int = 100) -> List[Project]:
-        """Get projects with optional user filtering"""
-        # Ensure table exists before any operation
-        ensure_projects_table(db)
-        
-        query = db.query(Project)
-        if user_id:
-            query = query.filter(Project.user_id == user_id)
-        return query.offset(skip).limit(limit).all()
-    
-    @staticmethod
-    def get_project_by_id(db: Session, project_id: str) -> Optional[Project]:
-        """Get project by ID"""
-        return db.query(Project).filter(Project.id == project_id).first()
-    
-    @staticmethod
-    def update_project(db: Session, project_id: str, **kwargs) -> Optional[Project]:
-        """Update project fields"""
+    def get_user_by_email(db: Session, email: str) -> Optional[User]:
+        """Get user by email"""
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if not project:
+            return db.query(User).filter(User.email == email).first()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting user by email: {str(e)}")
+            return None
+    
+    @staticmethod
+    def get_user_by_username(db: Session, username: str) -> Optional[User]:
+        """Get user by username"""
+        try:
+            return db.query(User).filter(User.username == username).first()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting user by username: {str(e)}")
+            return None
+    
+    @staticmethod
+    def get_user_by_oauth(db: Session, oauth_provider: str, oauth_id: str) -> Optional[User]:
+        """Get user by OAuth provider and ID"""
+        try:
+            return db.query(User).filter(
+                User.oauth_provider == oauth_provider,
+                User.oauth_id == oauth_id
+            ).first()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting user by OAuth: {str(e)}")
+            return None
+    
+    @staticmethod
+    def update_user(
+        db: Session,
+        user_id: str,
+        **kwargs
+    ) -> Optional[User]:
+        """Update user information"""
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
                 return None
             
-            for key, value in kwargs.items():
-                if hasattr(project, key):
-                    setattr(project, key, value)
+            # Update allowed fields
+            allowed_fields = [
+                'username', 'email', 'full_name', 'profile_picture_url',
+                'is_verified', 'is_active', 'last_login_at'
+            ]
             
-            # Let SQLAlchemy handle updated_at automatically through onupdate
+            for field, value in kwargs.items():
+                if field in allowed_fields and hasattr(user, field):
+                    setattr(user, field, value)
+            
+            user.updated_at = datetime.now()
             db.commit()
-            db.refresh(project)
-            logger.info(f"Project updated successfully: {project.title}")
-            return project
+            db.refresh(user)
+            
+            logger.info(f"Updated user with ID: {user_id}")
+            return user
+            
         except SQLAlchemyError as e:
-            logger.error(f"Failed to update project: {str(e)}")
             db.rollback()
-            raise
+            logger.error(f"Database error updating user: {str(e)}")
+            return None
     
     @staticmethod
-    def delete_project(db: Session, project_id: str) -> bool:
-        """Delete project and all associated scripts"""
+    def update_last_login(db: Session, user_id: str) -> bool:
+        """Update user's last login timestamp"""
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if not project:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
                 return False
             
-            db.delete(project)
+            user.last_login_at = datetime.now()
             db.commit()
-            logger.info(f"Project deleted successfully: {project_id}")
             return True
+            
         except SQLAlchemyError as e:
-            logger.error(f"Failed to delete project: {str(e)}")
             db.rollback()
-            raise
+            logger.error(f"Database error updating last login: {str(e)}")
+            return False
     
     @staticmethod
-    def get_projects_count(db: Session, user_id: Optional[str] = None) -> int:
-        """Get total count of projects"""
-        query = db.query(Project)
-        if user_id:
-            query = query.filter(Project.user_id == user_id)
-        return query.count()
+    def delete_user(db: Session, user_id: str) -> bool:
+        """Delete a user (soft delete by setting is_active to False)"""
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return False
+            
+            user.is_active = False
+            db.commit()
+            
+            logger.info(f"Deactivated user with ID: {user_id}")
+            return True
+            
+        except SQLAlchemyError as e:
+            db.rollback()
+            logger.error(f"Database error deactivating user: {str(e)}")
+            return False
+    
+    @staticmethod
+    def get_all_users(
+        db: Session,
+        skip: int = 0,
+        limit: int = 100,
+        include_inactive: bool = False
+    ) -> List[User]:
+        """Get all users with pagination"""
+        try:
+            query = db.query(User)
+            
+            if not include_inactive:
+                query = query.filter(User.is_active == True)
+            
+            return query.order_by(desc(User.created_at)).offset(skip).limit(limit).all()
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting all users: {str(e)}")
+            return []
