@@ -318,7 +318,10 @@ async def get_all_analyzed_scripts(
 
             data_to_return = {
             "success": True,
-            "data": [script.to_summary_dict() for script in scripts],
+            "data": [
+                {**s, 'filename': s['filename'].split('.')[0]} 
+                for s in (script.to_summary_dict() for script in scripts)
+                     ],
             "pagination": {
                 "total": total_count,
                 "skip": skip,
