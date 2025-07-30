@@ -10,7 +10,9 @@
         <div class="flex items-center gap-4">
           <select
             v-model="selectedProjectLocal"
+            @change="confirmProjectChange"
             class="bg-background-tertiary text-secondary text-xl font-inter-medium rounded-lg px-4 py-1 focus:outline-none border border-gray-600 focus:border-secondary transition-colors"
+            :disabled="budgetLoading"
           >
             <option
               v-for="project in projects"
@@ -21,22 +23,7 @@
               {{ project.title }}
             </option>
           </select>
-          
-          <!-- Confirm Button -->
-          <button
-            @click="confirmProjectChange"
-            :disabled="selectedProjectLocal === selectedProjectTitle || budgetLoading"
-            :class="[
-              'px-4 py-2 rounded-lg font-inter-semibold text-sm transition-colors',
-              selectedProjectLocal === selectedProjectTitle || budgetLoading
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-secondary text-black hover:bg-secondary-hover cursor-pointer'
-            ]"
-          >
-            <span v-if="budgetLoading">Loading...</span>
-            <span v-else-if="selectedProjectLocal === selectedProjectTitle">Current Project</span>
-            <span v-else>Confirm</span>
-          </button>
+          <span v-if="budgetLoading" class="text-gray-400 text-sm">Loading...</span>
           
           <!-- Budget Source Indicator -->
           <div v-if="selectedProject" class="flex items-center gap-2">
