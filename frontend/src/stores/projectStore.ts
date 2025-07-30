@@ -476,12 +476,12 @@ export const useProjectStore = defineStore('project', () => {
             },
           ],
           budget: {
-            talent: 'RM 4500',
-            location: 'RM 38000',
-            propsSet: 'RM 3200',
-            wardrobeMakeup: 'RM 28000',
+            talent: 'RM 450',
+            location: 'RM 380',
+            propsSet: 'RM 320',
+            wardrobeMakeup: 'RM 380',
             sfxVfx: 'RM 650',
-            crew: 'RM 350',
+            crew: 'RM 850',
             miscellaneous: 'RM 700'
           }
         }
@@ -561,13 +561,13 @@ export const useProjectStore = defineStore('project', () => {
             }
           ],
           budget: {
-            talent: 'RM 320000',
-            location: 'RM 240000',
-            propsSet: 'RM 180000',
-            wardrobeMakeup: 'RM 150000',
-            sfxVfx: 'RM 420000',
-            crew: 'RM 380000',
-            miscellaneous: 'RM 110000'
+            talent: 'RM 1200',
+            location: 'RM 400',
+            propsSet: 'RM 180',
+            wardrobeMakeup: 'RM 450',
+            sfxVfx: 'RM 420',
+            crew: 'RM 880',
+            miscellaneous: 'RM 110'
           }
         }
       },
